@@ -135,6 +135,10 @@ def test_upload_local_certificate_prompts_for_2fa_only_after_challenge(monkeypat
     from unifi_observer.cli import _upload_local_certificate
     from unifi_observer.domain.unifi_web_api_models import (
         ActivateCertificateResponse,
+        ApiKeyMetadata,
+        CreateApiKeyResponse,
+        ListApiKeysResponse,
+        ListCertificatesResponse,
         LoginSuccessResponse,
         MfaChallengeResponse,
         SessionCredentials,
@@ -180,12 +184,24 @@ def test_upload_local_certificate_prompts_for_2fa_only_after_challenge(monkeypat
             calls.append(("upload", request))
             return UploadCertificateResponse(200, "certificate-1")
 
+        async def list_api_keys(self, request):
+            calls.append(("list_keys", request))
+            return ListApiKeysResponse(200, ())
+
+        async def list_certificates(self, request):
+            calls.append(("list_certificates", request))
+            return ListCertificatesResponse(200, ())
+
         async def activate_certificate(self, request):
             calls.append(("activate", request))
             return ActivateCertificateResponse(200, True)
 
         async def create_api_key(self, request):
-            raise AssertionError("existing API key must skip creation")
+            calls.append(("create", request))
+            return CreateApiKeyResponse(
+                200,
+                ApiKeyMetadata("key-1", request.name, request.description, None, None, full_api_key="generated-key"),
+            )
 
         async def aclose(self):
             calls.append(("close",))
@@ -195,7 +211,9 @@ def test_upload_local_certificate_prompts_for_2fa_only_after_challenge(monkeypat
 
     _upload_local_certificate(settings, certificate, private_key)
 
-    assert [call[0] for call in calls] == ["login", "verify_2fa", "upload", "activate", "close"]
+    assert [call[0] for call in calls] == [
+        "login", "verify_2fa", "list_keys", "list_certificates", "upload", "activate", "create", "close"
+    ]
     assert calls[1][1].token == "123456"
 
 

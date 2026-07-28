@@ -440,13 +440,31 @@ Because these routes are used by the UniFi web application rather than exposed a
 ```python
 await uploader.authenticate(username, password, two_factor_token)
 
-api_key = await uploader.create_api_key(
-    name="unifi-observer",
-    description="UniFi Observer local integration key",
+server_id = "ai-core"
+api_key_name = f"unifi-observer-{server_id}"
+certificate_name = f"unifi.local-{server_id}"
+existing_keys = await web_console.list_api_keys(ListApiKeysRequest(user_id))
+existing_certificates = await web_console.list_certificates(ListCertificatesRequest())
+
+# Upload and activate replacements first.
+certificate = await web_console.upload_certificate(
+    UploadCertificateRequest(certificate_name, certificate_pem, private_key_pem)
+)
+await web_console.activate_certificate(ActivateCertificateRequest(certificate.certificate_id))
+api_key = await web_console.create_api_key(
+    CreateApiKeyRequest(user_id, api_key_name, "UniFi Observer local integration key")
 )
 
+# Delete only exact-name resources captured before replacement.
+for old_key in existing_keys.keys:
+    if old_key.name == api_key_name and old_key.key_id:
+        await web_console.delete_api_key(DeleteApiKeyRequest(old_key.key_id))
+for old_certificate in existing_certificates.certificates:
+    if old_certificate.name == certificate_name and old_certificate.certificate_id:
+        await web_console.delete_certificate(DeleteCertificateRequest(old_certificate.certificate_id))
+
 # Keep api_key in memory. Verify TLS and the selected site before writing config.env.
-await uploader.aclose()
+await web_console.aclose()
 ```
 
 The pseudocode is intentionally incomplete: the concrete adapter must validate the firmware response, enforce the configuration transaction boundary, and ensure that error messages never contain credential-bearing request or response data.

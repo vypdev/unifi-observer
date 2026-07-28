@@ -8,13 +8,14 @@ import getpass
 import json
 import os
 import shlex
+import socket
 import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from .application.bootstrap import UniFiConsoleBootstrap
+from .application.bootstrap import BootstrapResult, UniFiConsoleBootstrap
 from .domain.errors import CertificateUploadError, UniFiError
 from .infrastructure.config import Settings
 from .infrastructure.unifi_client import UniFiClient
@@ -105,6 +106,9 @@ def _settings_from_values(values: dict[str, str]) -> Settings:
         enable_write=values.get("UNIFI_ENABLE_WRITE", "false").lower() in {"1", "true", "yes"},
         host=values.get("MCP_HOST", "127.0.0.1"),
         port=int(values.get("MCP_PORT", "8000")),
+        server_id=values.get("UNIFI_SERVER_ID") or None,
+        api_key_id=values.get("UNIFI_API_KEY_ID") or None,
+        certificate_id=values.get("UNIFI_CERTIFICATE_ID") or None,
     )
     settings.validate()
     return settings
@@ -123,6 +127,9 @@ def _settings_to_values(settings: Settings) -> dict[str, str]:
         "UNIFI_ENABLE_WRITE": str(settings.enable_write).lower(),
         "MCP_HOST": settings.host,
         "MCP_PORT": str(settings.port),
+        "UNIFI_SERVER_ID": settings.server_id or "",
+        "UNIFI_API_KEY_ID": settings.api_key_id or "",
+        "UNIFI_CERTIFICATE_ID": settings.certificate_id or "",
     }
 
 
@@ -147,6 +154,7 @@ def _prompt_settings() -> Settings:
     api_key = _prompt(api_key_label, secret=True)
     host = _prompt("MCP bind host", "127.0.0.1")
     port = int(_prompt("MCP port", "8000"))
+    server_id = _prompt("Server identifier", _default_server_id())
     verify_tls = _prompt("Verify TLS (true/false)", "true").lower() not in {"0", "false", "no"}
     return Settings(
         api_mode=mode,
@@ -159,7 +167,13 @@ def _prompt_settings() -> Settings:
         enable_write=False,
         host=host,
         port=port,
+        server_id=server_id,
     )
+
+
+def _default_server_id() -> str:
+    value = socket.gethostname().strip().lower()
+    return value or "server"
 
 
 def _run_async(operation: Any) -> Any:
@@ -222,7 +236,7 @@ def _select_site(sites: list[dict[str, Any]]) -> str:
     return str(site_id)
 
 
-def _generate_local_certificates(config_path: Path) -> tuple[Path, Path, Path]:
+def _generate_local_certificates(config_path: Path, server_id: str | None = None) -> tuple[Path, Path, Path]:
     from scripts.generate_unifi_cert import (
         CertificateRequest,
         expected_files,
@@ -237,7 +251,14 @@ def _generate_local_certificates(config_path: Path) -> tuple[Path, Path, Path]:
     ip_address = _prompt("Certificate IP address", "192.168.0.1")
     organization = _prompt("Certificate organization (O)", "UniFi Observer")
     common_name = _prompt("Certificate common name (CN)", domain)
-    request = CertificateRequest(domain, ip_address, organization, common_name, output_dir)
+    request = CertificateRequest(
+        domain,
+        ip_address,
+        organization,
+        common_name,
+        output_dir,
+        artifact_suffix=server_id,
+    )
     validate_request(request)
     files = expected_files(request)
     existing = [path for path in files if path.exists()]
@@ -270,10 +291,11 @@ def _generate_local_certificates(config_path: Path) -> tuple[Path, Path, Path]:
     for path in files:
         print(f"  - {path}")
     print(f"Certificate material directory: {output_dir}")
+    suffix = f"-{server_id}" if server_id else ""
     return (
-        output_dir / f"{domain}.fullchain.crt",
-        output_dir / f"{domain}.key",
-        output_dir / "unifi-local-ca.crt",
+        output_dir / f"{domain}{suffix}.fullchain.crt",
+        output_dir / f"{domain}{suffix}.key",
+        output_dir / f"unifi-local-ca{suffix}.crt",
     )
 
 
@@ -286,7 +308,7 @@ def _upload_local_certificate(
     settings: Settings,
     certificate_path: Path,
     private_key_path: Path,
-) -> str | None:
+) -> BootstrapResult:
     username = _prompt("UniFi Console administrator username")
     password = _prompt("UniFi Console administrator password", secret=True)
     certificate_pem = certificate_path.read_text(encoding="utf-8")
@@ -295,7 +317,7 @@ def _upload_local_certificate(
     async def request_two_factor() -> str:
         return _prompt("UniFi 2FA token", secret=True)
 
-    async def operation() -> str | None:
+    async def operation() -> BootstrapResult:
         uploader = UniFiWebApiClient(settings.api_base_url, settings.timeout_seconds)
         try:
             bootstrap = UniFiConsoleBootstrap(uploader)
@@ -306,20 +328,19 @@ def _upload_local_certificate(
                 certificate_pem=certificate_pem,
                 private_key_pem=private_key_pem,
                 request_two_factor=request_two_factor,
-                generate_api_key=not bool(settings.api_key),
+                api_key_name=f"unifi-observer-{settings.server_id or _default_server_id()}",
             )
         except CertificateUploadError as exc:
             raise CliError(f"automatic UniFi certificate upload failed: {exc}") from exc
         finally:
             await uploader.aclose()
 
-    generated_api_key = _run_async(operation())
-    print("api_key_created: " + ("true" if generated_api_key else "false"))
-    print(f"api_key_length: {len(generated_api_key) if generated_api_key else 0}")
+    result = _run_async(operation())
+    print("api_key_created: true")
+    print(f"api_key_length: {len(result.api_key)}")
     print("Certificate uploaded and activated on UniFi Console.")
-    if generated_api_key:
-        print("UniFi API key generated and kept out of console output.")
-    return generated_api_key
+    print("UniFi API key generated and kept out of console output.")
+    return result
 
 
 def _prepare_local_tls(settings: Settings, config_path: Path) -> Settings:
@@ -331,15 +352,20 @@ def _prepare_local_tls(settings: Settings, config_path: Path) -> Settings:
     settings = replace(settings, verify_tls=True)
     generate = _prompt("Generate certificates for local verification with Unifi?", "yes")
     if generate.lower() in {"y", "yes"}:
-        server_cert, private_key, ca_cert = _generate_local_certificates(config_path)
+        if settings.server_id:
+            server_cert, private_key, ca_cert = _generate_local_certificates(config_path, settings.server_id)
+        else:
+            server_cert, private_key, ca_cert = _generate_local_certificates(config_path)
         automatic_upload = _prompt("Upload certificate automatically to UniFi Console? (recommended)", "yes")
         if automatic_upload.lower() in {"y", "yes"}:
             try:
-                generated_api_key = _upload_local_certificate(settings, server_cert, private_key)
+                result = _upload_local_certificate(settings, server_cert, private_key)
                 return replace(
                     settings,
                     ca_cert_path=str(ca_cert),
-                    api_key=generated_api_key or settings.api_key,
+                    api_key=result.api_key,
+                    api_key_id=result.api_key_id,
+                    certificate_id=result.certificate_id,
                 )
             except CliError as exc:
                 print(f"Automatic upload unavailable: {exc}")

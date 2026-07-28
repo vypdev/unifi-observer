@@ -88,6 +88,35 @@ def test_generate_certificates_creates_expected_files_and_permissions(tmp_path):
     assert "IP Address:192.0.2.10" in certificate.stdout
 
 
+def test_generate_certificates_names_artifacts_by_server_without_changing_tls_san(tmp_path):
+    request = CertificateRequest(
+        domain="unifi.local",
+        ip_address="192.0.2.10",
+        organization="Test Lab",
+        common_name="unifi.local",
+        output_dir=tmp_path / "certs",
+        artifact_suffix="ai-core",
+    )
+
+    generated = generate_certificates(request)
+
+    assert {path.name for path in generated} == {
+        "unifi-local-ca-ai-core.key",
+        "unifi-local-ca-ai-core.crt",
+        "unifi.local-ai-core.key",
+        "unifi.local-ai-core.csr",
+        "unifi.local-ai-core.crt",
+        "unifi.local-ai-core.fullchain.crt",
+    }
+    certificate = subprocess.run(
+        ["openssl", "x509", "-in", str(request.output_dir / "unifi.local-ai-core.crt"), "-noout", "-ext", "subjectAltName"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "DNS:unifi.local" in certificate.stdout
+
+
 def test_generate_certificates_does_not_overwrite_without_force(tmp_path):
     request = CertificateRequest(
         domain="unifi.local",

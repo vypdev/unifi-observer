@@ -27,6 +27,7 @@ class CertificateRequest:
     server_days: int = 825
     ca_days: int = 3650
     force: bool = False
+    artifact_suffix: str | None = None
 
 
 def validate_request(request: CertificateRequest) -> None:
@@ -46,17 +47,20 @@ def validate_request(request: CertificateRequest) -> None:
             raise ValueError(f"{label} must be non-empty and contain no separators or control characters")
     if request.server_days <= 0 or request.ca_days <= 0:
         raise ValueError("certificate validity periods must be positive")
+    if request.artifact_suffix is not None and not _DOMAIN_LABEL_PATTERN.fullmatch(request.artifact_suffix):
+        raise ValueError("artifact suffix must contain only letters, digits, and hyphens")
 
 
 def expected_files(request: CertificateRequest) -> tuple[Path, ...]:
     prefix = request.output_dir
+    suffix = f"-{request.artifact_suffix}" if request.artifact_suffix else ""
     return (
-        prefix / "unifi-local-ca.key",
-        prefix / "unifi-local-ca.crt",
-        prefix / f"{request.domain}.key",
-        prefix / f"{request.domain}.csr",
-        prefix / f"{request.domain}.crt",
-        prefix / f"{request.domain}.fullchain.crt",
+        prefix / f"unifi-local-ca{suffix}.key",
+        prefix / f"unifi-local-ca{suffix}.crt",
+        prefix / f"{request.domain}{suffix}.key",
+        prefix / f"{request.domain}{suffix}.csr",
+        prefix / f"{request.domain}{suffix}.crt",
+        prefix / f"{request.domain}{suffix}.fullchain.crt",
     )
 
 
@@ -112,12 +116,13 @@ def _install_files(staged_request: CertificateRequest, request: CertificateReque
 
 def _generate_in_directory(request: CertificateRequest) -> None:
     output_dir = request.output_dir
-    ca_key = output_dir / "unifi-local-ca.key"
-    ca_cert = output_dir / "unifi-local-ca.crt"
-    server_key = output_dir / f"{request.domain}.key"
-    csr = output_dir / f"{request.domain}.csr"
-    server_cert = output_dir / f"{request.domain}.crt"
-    fullchain = output_dir / f"{request.domain}.fullchain.crt"
+    suffix = f"-{request.artifact_suffix}" if request.artifact_suffix else ""
+    ca_key = output_dir / f"unifi-local-ca{suffix}.key"
+    ca_cert = output_dir / f"unifi-local-ca{suffix}.crt"
+    server_key = output_dir / f"{request.domain}{suffix}.key"
+    csr = output_dir / f"{request.domain}{suffix}.csr"
+    server_cert = output_dir / f"{request.domain}{suffix}.crt"
+    fullchain = output_dir / f"{request.domain}{suffix}.fullchain.crt"
     extension_file = output_dir / "server.ext"
     serial_file = output_dir / "unifi-local-ca.srl"
 

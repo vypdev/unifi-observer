@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,6 +10,7 @@ MODE_ALIASES = {
     "local": "local",
     "network-integration": "local",
 }
+SERVER_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,9 @@ class Settings:
     ca_cert_path: str | None = None
     host: str = "0.0.0.0"
     port: int = 8000
+    server_id: str | None = None
+    api_key_id: str | None = None
+    certificate_id: str | None = None
 
     def __post_init__(self) -> None:
         try:
@@ -31,6 +36,8 @@ class Settings:
         except KeyError as exc:
             raise ValueError("UNIFI_API_MODE must be site-manager or local") from exc
         object.__setattr__(self, "api_mode", canonical_mode)
+        if self.server_id is not None and not SERVER_ID_PATTERN.fullmatch(self.server_id.strip().lower()):
+            raise ValueError("UNIFI_SERVER_ID must contain only lowercase letters, digits, and hyphens")
         if self.ca_cert_path and not Path(self.ca_cert_path).expanduser().is_file():
             raise ValueError("UNIFI_CA_CERT_PATH must point to an existing certificate file")
 

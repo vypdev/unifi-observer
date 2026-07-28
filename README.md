@@ -117,12 +117,30 @@ POST /api/userCertificates
 PUT  /api/userCertificates/{id}/status
 ```
 
-The same authenticated session can optionally create the local Network Integration API key
-through the web-console endpoint `/proxy/users/api/v2/user/{user_id}/keys`. The key is
-returned only once in `data.full_api_key`, stored in the private configuration file, and
-never printed. The permissions returned by current UniFi OS versions may be broader than
+The same authenticated session creates the local Network Integration API key through the
+web-console endpoint `/proxy/users/api/v2/user/{user_id}/keys`. The key is returned only once
+in `data.full_api_key`, stored in the private configuration file, and never printed. The
+permissions returned by current UniFi OS versions may be broader than
 the Observer's read-only behavior; use a dedicated local UniFi account where possible and
 review/revoke the generated key from the console when no longer needed.
+
+The wizard asks for a stable server identifier, defaulting to the local hostname. Local
+resources are namespaced with that identifier:
+
+```text
+API key:     unifi-observer-ai-core
+certificate: unifi.local-ai-core
+files:       unifi.local-ai-core.fullchain.crt
+             unifi.local-ai-core.key
+             unifi-local-ca-ai-core.crt
+```
+
+The certificate SAN remains `unifi.local` (and the configured console IP), so the identifier
+does not change the hostname used for TLS verification. On a later configuration of the same
+server, the authenticated bootstrap lists resources, matches the exact server names, creates
+and activates replacements, then deletes only the previous matching API key and certificate.
+The final private configuration also records the non-secret `UNIFI_API_KEY_ID` and
+`UNIFI_CERTIFICATE_ID` values.
 
 The internal web-console integration is documented in
 [`docs/unifi-web-console-api.md`](docs/unifi-web-console-api.md). It records observed
@@ -186,11 +204,11 @@ When `unifi-observer configure` detects existing material under
 
 For a trusted local deployment:
 
-1. Upload `<domain>.fullchain.crt` and `<domain>.key` to the UniFi console.
-2. Configure `UNIFI_CA_CERT_PATH` with `unifi-local-ca.crt`. Installing the CA in the system
+1. Upload `<domain>-<server-id>.fullchain.crt` and `<domain>-<server-id>.key` to the UniFi console.
+2. Configure `UNIFI_CA_CERT_PATH` with `unifi-local-ca-<server-id>.crt`. Installing the CA in the system
    trust store is optional; on Debian/Ubuntu, use:
    ```bash
-   sudo cp unifi-local-ca.crt /usr/local/share/ca-certificates/unifi-local-ca.crt
+   sudo cp unifi-local-ca-<server-id>.crt /usr/local/share/ca-certificates/unifi-local-ca-<server-id>.crt
    sudo update-ca-certificates
    ```
 3. Resolve the domain to the console IP on the MCP host.
