@@ -82,9 +82,9 @@ class UniFiCertificateUploader:
                 content=json.dumps({"name": name, "description": description}),
             )
         except httpx.HTTPError as exc:
-            raise CertificateUploadError("UniFi API key creation was unavailable") from exc
+            raise CertificateUploadError(f"[NETWORK_ERROR] UniFi API key creation unavailable ({type(exc).__name__})") from exc
         if response.status_code >= 400:
-            raise CertificateUploadError("UniFi API key creation was rejected", response.status_code)
+            raise CertificateUploadError(_http_failure("API_KEY_CREATION_FAILED", response))
         try:
             payload: Any = response.json()
         except ValueError as exc:
@@ -110,12 +110,17 @@ class UniFiCertificateUploader:
                 json=payload,
             )
         except httpx.HTTPError as exc:
-            raise CertificateUploadError("UniFi Console login was unavailable") from exc
+            raise CertificateUploadError(f"[NETWORK_ERROR] UniFi login unavailable ({type(exc).__name__})") from exc
         response_payload = _response_json(response)
         if response.status_code == 499 and _requires_two_factor(response_payload):
-            raise TwoFactorRequiredError("UniFi Console requires a 2FA token", response.status_code)
+            raise TwoFactorRequiredError("[TWO_FACTOR_REQUIRED] UniFi Console requires a 2FA token", response.status_code)
         if response.status_code >= 400:
-            raise CertificateUploadError("UniFi Console login was rejected", response.status_code)
+            if response.status_code == 401:
+                raise CertificateUploadError(
+                    "[AUTHENTICATION_REJECTED] HTTP 401: UniFi rejected the username/password "
+                    "or the account is not permitted for local console login"
+                )
+            raise CertificateUploadError(_http_failure("AUTHENTICATION_FAILED", response))
 
         csrf_header = response.headers.get("x-csrf-token")
         token = response.cookies.get("TOKEN") or self._http.cookies.get("TOKEN")
@@ -142,9 +147,9 @@ class UniFiCertificateUploader:
                 },
             )
         except httpx.HTTPError as exc:
-            raise CertificateUploadError("UniFi certificate upload was unavailable") from exc
+            raise CertificateUploadError(f"[NETWORK_ERROR] Certificate upload unavailable ({type(exc).__name__})") from exc
         if response.status_code >= 400:
-            raise CertificateUploadError("UniFi certificate upload was rejected", response.status_code)
+            raise CertificateUploadError(_http_failure("CERTIFICATE_UPLOAD_FAILED", response))
         certificate_id = _certificate_id(response)
         if not certificate_id:
             raise CertificateUploadError("UniFi certificate upload returned no certificate ID")
@@ -158,9 +163,9 @@ class UniFiCertificateUploader:
                 json={"active": True},
             )
         except httpx.HTTPError as exc:
-            raise CertificateUploadError("UniFi certificate activation was unavailable") from exc
+            raise CertificateUploadError(f"[NETWORK_ERROR] Certificate activation unavailable ({type(exc).__name__})") from exc
         if response.status_code >= 400:
-            raise CertificateUploadError("UniFi certificate activation was rejected", response.status_code)
+            raise CertificateUploadError(_http_failure("CERTIFICATE_ACTIVATION_FAILED", response))
 
 
 def _csrf_from_token(token: str) -> str:
@@ -203,6 +208,20 @@ def _certificate_id(response: httpx.Response) -> str | None:
     if isinstance(data, dict) and isinstance(data.get("id"), str) and data["id"]:
         return data["id"]
     return None
+
+
+def _http_failure(category: str, response: httpx.Response) -> str:
+    payload = _response_json(response)
+    upstream_code: str | None = None
+    meta = payload.get("meta")
+    if isinstance(meta, dict) and isinstance(meta.get("msg"), str):
+        upstream_code = meta["msg"]
+    elif isinstance(payload.get("codeS"), str):
+        upstream_code = payload["codeS"]
+    elif isinstance(payload.get("msg"), str):
+        upstream_code = payload["msg"]
+    detail = f"; UniFi code: {upstream_code}" if upstream_code else ""
+    return f"[{category}] HTTP {response.status_code}{detail}"
 
 
 def _response_json(response: httpx.Response) -> dict[str, Any]:

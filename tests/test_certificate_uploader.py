@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 from unifi_observer.infrastructure.certificate_uploader import (
+    CertificateUploadError,
     TwoFactorRequiredError,
     UniFiCertificateUploader,
 )
@@ -76,6 +77,24 @@ async def test_upload_and_activate_uses_local_console_web_contract():
         "/api/userCertificates/certificate-1/status",
         "/proxy/users/api/v2/user/user-1/keys",
     ]
+
+
+@pytest.mark.asyncio
+async def test_authentication_reports_http_status_without_secrets():
+    uploader = UniFiCertificateUploader(
+        "https://unifi.local",
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                401,
+                json={"meta": {"msg": "api.err.InvalidCredentials"}},
+            ),
+        ),
+    )
+
+    with pytest.raises(CertificateUploadError, match=r"AUTHENTICATION_REJECTED.*HTTP 401") as error:
+        await uploader.authenticate("admin", "super-secret-value")
+    assert "super-secret-value" not in str(error.value)
+    await uploader.aclose()
 
 
 @pytest.mark.asyncio
