@@ -5,6 +5,7 @@ import pytest
 from unifi_observer.cli import (
     CliError,
     _configure,
+    _generate_local_certificates,
     _prepare_local_tls,
     build_parser,
     load_env_file,
@@ -150,6 +151,85 @@ def test_upload_local_certificate_prompts_for_2fa_only_after_challenge(monkeypat
     assert calls[1] == ("authenticate", "admin", "password", "123456")
     assert calls[2][0] == "upload"
     assert calls[-1] == ("close",)
+
+
+def test_generate_local_certificates_reuses_existing_material(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.env"
+    certificate_dir = config_path.parent / "certificates"
+    certificate_dir.mkdir()
+    certificate_dir.chmod(0o700)
+    existing = {
+        "unifi-local-ca.key": "CA-KEY",
+        "unifi-local-ca.crt": "CA-CERT",
+        "unifi.local.key": "SERVER-KEY",
+        "unifi.local.csr": "CSR",
+        "unifi.local.crt": "CERT",
+        "unifi.local.fullchain.crt": "FULLCHAIN",
+    }
+    for name, content in existing.items():
+        path = certificate_dir / name
+        path.write_text(content, encoding="utf-8")
+        if name.endswith(".key"):
+            path.chmod(0o600)
+    answers = iter(["unifi.local", "192.168.0.1", "UniFi Observer", "unifi.local", "reuse"])
+    monkeypatch.setattr("unifi_observer.cli._prompt", lambda *args, **kwargs: next(answers))
+    monkeypatch.setattr(
+        "scripts.generate_unifi_cert.generate_certificates",
+        lambda _: pytest.fail("reuse must not regenerate certificates"),
+    )
+
+    result = _generate_local_certificates(config_path)
+
+    assert result == (
+        certificate_dir / "unifi.local.fullchain.crt",
+        certificate_dir / "unifi.local.key",
+        certificate_dir / "unifi-local-ca.crt",
+    )
+    assert (certificate_dir / "unifi-local-ca.key").read_text() == "CA-KEY"
+
+
+def test_generate_local_certificates_replacement_requires_explicit_confirmation(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.env"
+    certificate_dir = config_path.parent / "certificates"
+    certificate_dir.mkdir()
+    certificate_dir.chmod(0o700)
+    existing_key = certificate_dir / "unifi-local-ca.key"
+    existing_key.write_text("OLD", encoding="utf-8")
+    existing_key.chmod(0o600)
+    answers = iter(["unifi.local", "192.168.0.1", "UniFi Observer", "unifi.local", "replace", "REPLACE"])
+    monkeypatch.setattr("unifi_observer.cli._prompt", lambda *args, **kwargs: next(answers))
+    generated_requests = []
+
+    def fake_generate(request):
+        generated_requests.append(request)
+        return tuple(certificate_dir / name for name in (
+            "unifi-local-ca.key", "unifi-local-ca.crt", "unifi.local.key",
+            "unifi.local.csr", "unifi.local.crt", "unifi.local.fullchain.crt",
+        ))
+
+    monkeypatch.setattr("scripts.generate_unifi_cert.generate_certificates", fake_generate)
+
+    _generate_local_certificates(config_path)
+
+    assert len(generated_requests) == 1
+    assert generated_requests[0].force is True
+
+
+def test_generate_local_certificates_cancel_does_not_change_existing_material(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.env"
+    certificate_dir = config_path.parent / "certificates"
+    certificate_dir.mkdir()
+    certificate_dir.chmod(0o700)
+    existing_key = certificate_dir / "unifi-local-ca.key"
+    existing_key.write_text("OLD", encoding="utf-8")
+    existing_key.chmod(0o600)
+    answers = iter(["unifi.local", "192.168.0.1", "UniFi Observer", "unifi.local", "replace", "NO"])
+    monkeypatch.setattr("unifi_observer.cli._prompt", lambda *args, **kwargs: next(answers))
+
+    with pytest.raises(CliError, match="cancelled"):
+        _generate_local_certificates(config_path)
+
+    assert existing_key.read_text() == "OLD"
 
 
 def test_configure_does_not_persist_after_tls_verification_failure(monkeypatch, tmp_path):

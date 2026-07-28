@@ -170,6 +170,15 @@ full-chain certificate. It does not overwrite existing files unless `--force` is
 passed, applies restrictive permissions to private keys, and prints the next deployment
 steps without printing key material.
 
+When `unifi-observer configure` detects existing material under
+`~/.config/unifi-observer/certificates`, it does not fail with an opaque
+`output file already exists` error. It shows the files and offers:
+
+- **reuse**: keeps every existing file and continues with the existing certificate/key upload;
+- **replace**: warns that the existing material will be overwritten and requires typing
+  `REPLACE` before using the generator's atomic replacement path;
+- **cancel**: exits without deleting or changing the certificate material.
+
 For a trusted local deployment:
 
 1. Upload `<domain>.fullchain.crt` and `<domain>.key` to the UniFi console.

@@ -204,18 +204,50 @@ def _select_site(sites: list[dict[str, Any]]) -> str:
 
 
 def _generate_local_certificates(config_path: Path) -> tuple[Path, Path, Path]:
-    from scripts.generate_unifi_cert import CertificateRequest, generate_certificates
+    from scripts.generate_unifi_cert import (
+        CertificateRequest,
+        expected_files,
+        generate_certificates,
+        validate_request,
+    )
 
     _ensure_private_config_dir(config_path.parent)
     output_dir = config_path.parent / "certificates"
+    _ensure_private_config_dir(output_dir)
     domain = _prompt("Certificate DNS domain", "unifi.local")
     ip_address = _prompt("Certificate IP address")
     organization = _prompt("Certificate organization (O)", "UniFi Observer")
     common_name = _prompt("Certificate common name (CN)", domain)
-    files = generate_certificates(
-        CertificateRequest(domain, ip_address, organization, common_name, output_dir)
-    )
-    print("Generated certificate files:")
+    request = CertificateRequest(domain, ip_address, organization, common_name, output_dir)
+    validate_request(request)
+    files = expected_files(request)
+    existing = [path for path in files if path.exists()]
+    if existing:
+        print("Existing certificate material was found:")
+        for path in existing:
+            print(f"  - {path}")
+        print("Recreating it will replace the existing certificate and may invalidate the certificate currently installed in UniFi.")
+        choice = _prompt("Choose: replace, reuse, or cancel", "reuse").lower()
+        if choice in {"reuse", "r", "reutilizar"}:
+            required = (files[1], files[2], files[5])
+            missing = [path for path in required if not path.exists()]
+            if missing:
+                raise CliError(f"cannot reuse existing certificate material; missing: {missing[0]}")
+            if files[2].stat().st_mode & 0o077:
+                raise CliError(f"private key must be private: {files[2]}")
+            print("Reusing the existing certificate material; no certificate files will be deleted.")
+        elif choice in {"replace", "p", "rehacer"}:
+            print("WARNING: replacing the existing material will overwrite the files listed above.")
+            confirmation = _prompt("Type REPLACE to confirm replacement")
+            if confirmation != "REPLACE":
+                raise CliError("certificate replacement cancelled; no files were changed")
+            request = replace(request, force=True)
+            files = generate_certificates(request)
+        else:
+            raise CliError("certificate configuration cancelled; no files were changed")
+    else:
+        files = generate_certificates(request)
+    print("Certificate files ready:")
     for path in files:
         print(f"  - {path}")
     print(f"Install {output_dir / 'unifi-local-ca.crt'} in the MCP host trust store.")
