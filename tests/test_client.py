@@ -45,10 +45,11 @@ def test_custom_ca_certificate_is_accepted(tmp_path):
     assert make_settings(ca_cert_path=str(ca_path)).ca_cert_path == str(ca_path)
 
 
-def test_client_passes_custom_ca_to_httpx(tmp_path, monkeypatch):
+def test_client_passes_custom_ca_context_to_httpx(tmp_path, monkeypatch):
     ca_path = tmp_path / "ca.crt"
     ca_path.write_text("test CA", encoding="utf-8")
     captured = {}
+    context = object()
 
     class FakeAsyncClient:
         is_closed = False
@@ -56,10 +57,15 @@ def test_client_passes_custom_ca_to_httpx(tmp_path, monkeypatch):
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
+    monkeypatch.setattr(
+        "unifi_observer.infrastructure.unifi_client.ssl.create_default_context",
+        lambda **kwargs: (captured.update({"cafile": kwargs["cafile"]}) or context),
+    )
     monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
     UniFiClient(make_settings(ca_cert_path=str(ca_path)))
 
-    assert captured["verify"] == str(ca_path)
+    assert captured["cafile"] == str(ca_path)
+    assert captured["verify"] is context
 
 
 @pytest.mark.asyncio

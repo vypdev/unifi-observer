@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ssl
 from typing import Any
 from urllib.parse import quote
 
@@ -90,6 +91,11 @@ class UniFiClient(UniFiGateway):
         path = path_template.format(site_id=quote(site_id, safe=""))
         return await self.get_json(path, params)
 
+    def _tls_verify(self) -> bool | ssl.SSLContext:
+        if self.settings.ca_cert_path:
+            return ssl.create_default_context(cafile=self.settings.ca_cert_path)
+        return self.settings.verify_tls
+
     def path(self, resource: str) -> str:
         if self.settings.api_mode == "local":
             return f"/proxy/network/integration/v1/{resource.lstrip('/')}"
@@ -101,7 +107,7 @@ class UniFiClient(UniFiGateway):
                 base_url=self.settings.api_base_url,
                 headers=self._headers,
                 timeout=self.settings.timeout_seconds,
-                verify=self.settings.ca_cert_path or self.settings.verify_tls,
+                verify=self._tls_verify(),
                 transport=self._transport,
             )
         return self._http
