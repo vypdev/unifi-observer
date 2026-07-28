@@ -54,6 +54,32 @@ def test_write_env_file_refuses_parent_that_is_not_private(tmp_path):
         write_env_file(path, {"UNIFI_API_KEY": "secret"})
 
 
+def test_generate_certificate_uses_core_ultra_ip_as_default(monkeypatch, tmp_path):
+    import scripts.generate_unifi_cert as generator
+
+    prompts = []
+    answers = iter(["unifi.local", "", "UniFi Observer", "unifi.local"])
+
+    def prompt(label, default=None, **kwargs):
+        prompts.append((label, default))
+        return next(answers) or (default or "")
+
+    captured = []
+    monkeypatch.setattr("unifi_observer.cli._prompt", prompt)
+    monkeypatch.setattr(generator, "validate_request", lambda request: captured.append(request))
+    files = tuple(tmp_path / name for name in (
+        "unifi-local-ca.key", "unifi-local-ca.crt", "unifi.local.key",
+        "unifi.local.csr", "unifi.local.crt", "unifi.local.fullchain.crt",
+    ))
+    monkeypatch.setattr(generator, "expected_files", lambda request: files)
+    monkeypatch.setattr(generator, "generate_certificates", lambda request: files)
+
+    _generate_local_certificates(tmp_path / "config.env")
+
+    assert captured[0].ip_address == "192.168.0.1"
+    assert ("Certificate IP address", "192.168.0.1") in prompts
+
+
 def test_prepare_local_tls_generates_ca_and_returns_verify_settings(monkeypatch, tmp_path):
     settings = Settings(
         api_mode="local",

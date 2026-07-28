@@ -218,7 +218,7 @@ def _generate_local_certificates(config_path: Path) -> tuple[Path, Path, Path]:
     output_dir = config_path.parent / "certificates"
     _ensure_private_config_dir(output_dir)
     domain = _prompt("Certificate DNS domain", "unifi.local")
-    ip_address = _prompt("Certificate IP address")
+    ip_address = _prompt("Certificate IP address", "192.168.0.1")
     organization = _prompt("Certificate organization (O)", "UniFi Observer")
     common_name = _prompt("Certificate common name (CN)", domain)
     request = CertificateRequest(domain, ip_address, organization, common_name, output_dir)
