@@ -117,8 +117,9 @@ class UniFiCertificateUploader:
         if response.status_code >= 400:
             if response.status_code == 401:
                 raise CertificateUploadError(
-                    "[AUTHENTICATION_REJECTED] HTTP 401: UniFi rejected the username/password "
-                    "or the account is not permitted for local console login"
+                    f"{_http_failure('AUTHENTICATION_REJECTED', response)}: "
+                    "UniFi rejected the username/password or the account is not permitted "
+                    "for local console login"
                 )
             raise CertificateUploadError(_http_failure("AUTHENTICATION_FAILED", response))
 
