@@ -1,7 +1,7 @@
 import pytest
 
-from unifi_mcp.application.ports import UniFiGateway
-from unifi_mcp.application.use_cases import UniFiUseCases
+from unifi_observer.application.ports import UniFiGateway
+from unifi_observer.application.use_cases import UniFiUseCases
 
 
 class FakeGateway(UniFiGateway):

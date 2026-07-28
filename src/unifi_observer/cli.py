@@ -218,7 +218,7 @@ def _write_unit(config_path: Path) -> Path:
     path = _unit_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        f"""[Unit]\nDescription=UniFi Observer MCP service\nAfter=network-online.target\n\n[Service]\nType=simple\nExecStart={shlex.quote(sys.executable)} -m unifi_mcp.server\nEnvironmentFile={shlex.quote(str(config_path.expanduser()))}\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n""",
+        f"""[Unit]\nDescription=UniFi Observer MCP service\nAfter=network-online.target\n\n[Service]\nType=simple\nExecStart={shlex.quote(sys.executable)} -m unifi_observer.server\nEnvironmentFile={shlex.quote(str(config_path.expanduser()))}\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n""",
         encoding="utf-8",
     )
     path.chmod(0o644)

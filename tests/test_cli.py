@@ -2,7 +2,7 @@ import stat
 
 import pytest
 
-from unifi_mcp.cli import build_parser, load_env_file, write_env_file
+from unifi_observer.cli import build_parser, load_env_file, write_env_file
 
 
 def test_parser_exposes_observer_commands():

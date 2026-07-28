@@ -49,7 +49,7 @@ python3 -m venv .venv
 .venv/bin/pytest
 set -a; . ./.env; set +a
 UNIFI_API_BASE_URL=https://api.ui.com \
-  .venv/bin/python -m unifi_mcp.server
+  .venv/bin/python -m unifi_observer.server
 ```
 
 The application reads configuration from the process environment; it does not load

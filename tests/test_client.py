@@ -1,8 +1,8 @@
 import httpx
 import pytest
 
-from unifi_mcp.client import UniFiAPIError, UniFiClient
-from unifi_mcp.config import Settings
+from unifi_observer.client import UniFiAPIError, UniFiClient
+from unifi_observer.config import Settings
 
 
 def make_settings(**overrides):

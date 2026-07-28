@@ -25,10 +25,10 @@ dev = [
 ]
 
 [project.scripts]
-unifi-observer = "unifi_mcp.cli:main"
+unifi-observer = "unifi_observer.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/unifi_mcp", "scripts"]
+packages = ["src/unifi_observer", "scripts"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

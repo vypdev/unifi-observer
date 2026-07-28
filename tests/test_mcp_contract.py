@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from unifi_mcp.application.use_cases import UniFiUseCases
-from unifi_mcp.presentation.mcp_app import create_mcp_app
+from unifi_observer.application.use_cases import UniFiUseCases
+from unifi_observer.presentation.mcp_app import create_mcp_app
 
 
 class ContractGateway:
