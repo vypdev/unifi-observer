@@ -172,6 +172,11 @@ def _extract_sites(payload: Any) -> list[dict[str, Any]]:
 
 
 def _discover_sites(settings: Settings) -> list[dict[str, Any]]:
+    print(
+        "official_api_request: X-API-Key "
+        + ("present" if settings.api_key else "absent")
+    )
+
     async def operation():
         client = UniFiClient(settings)
         try:
@@ -295,6 +300,8 @@ def _upload_local_certificate(
             await uploader.aclose()
 
     generated_api_key = _run_async(operation())
+    print("api_key_created: " + ("true" if generated_api_key else "false"))
+    print(f"api_key_length: {len(generated_api_key) if generated_api_key else 0}")
     print("Certificate uploaded and activated on UniFi Console.")
     if generated_api_key:
         print("UniFi API key generated and kept out of console output.")
@@ -385,6 +392,8 @@ def _configure(config_path: Path) -> int:
     try:
         sites = _discover_sites(settings)
     except UniFiError as exc:
+        if exc.status_code is not None:
+            print(f"official_api_response: HTTP {exc.status_code}")
         if exc.status_code in {401, 403}:
             raise CliError(
                 "UniFi official API rejected the API key (HTTP "
