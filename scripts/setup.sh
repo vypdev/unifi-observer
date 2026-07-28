@@ -5,9 +5,11 @@ INSTALL_DIR="${UNIFI_OBSERVER_INSTALL_DIR:-$HOME/.local/share/unifi-observer}"
 BIN_DIR="${UNIFI_OBSERVER_BIN_DIR:-$HOME/.local/bin}"
 CLI_PATH="$BIN_DIR/unifi-observer"
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=terminal-ui.sh
+source "$REPO_ROOT/scripts/terminal-ui.sh"
 
 fail() {
-  printf 'unifi-observer setup: error: %s\n' "$*" >&2
+  ui_error "$*"
   exit 1
 }
 
@@ -23,8 +25,7 @@ run_privileged() {
 APT_UPDATED=0
 apt_update_once() {
   if (( APT_UPDATED == 0 )); then
-    printf 'unifi-observer setup: updating APT metadata\n'
-    run_privileged env DEBIAN_FRONTEND=noninteractive apt-get update -qq \
+    ui_run "Refreshing package metadata" run_privileged env DEBIAN_FRONTEND=noninteractive apt-get update -qq \
       || fail "apt-get update failed while preparing Python dependencies"
     APT_UPDATED=1
   fi
@@ -74,7 +75,7 @@ command -v systemctl >/dev/null 2>&1 || fail "systemd/systemctl is required"
 
 if ! command -v python3 >/dev/null 2>&1; then
   command -v apt-get >/dev/null 2>&1 || fail "python3 is missing and apt-get is not available"
-  printf 'unifi-observer setup: python3 is missing; installing it\n'
+  ui_step "Python 3.11+ not found; preparing the runtime"
   apt_install python3
 fi
 command -v python3 >/dev/null 2>&1 || fail "python3 is required after package installation"
@@ -91,21 +92,23 @@ if ! probe_venv; then
   if ! apt-cache show "$venv_package" >/dev/null 2>&1; then
     venv_package="python3-venv"
   fi
-  printf 'unifi-observer setup: Python venv support is missing; installing %s\n' "$venv_package"
+  ui_step "Python venv support is missing; installing $venv_package"
   apt_install "$venv_package"
   probe_venv || fail "Python venv support is still unavailable after installing $venv_package (details: $VENV_ERROR)"
 fi
 
+ui_banner "UniFi Observer setup" "Preparing the user-owned native service"
+ui_step "Preparing private installation directories"
 mkdir -p "$INSTALL_DIR" "$BIN_DIR"
 chmod 700 "$INSTALL_DIR"
 chmod 755 "$BIN_DIR"
 
 venv="$INSTALL_DIR/.venv"
 if [[ ! -x "$venv/bin/python" ]]; then
-  python3 -m venv "$venv" || fail "could not create Python virtual environment; install the matching python3-venv package"
+  ui_run "Creating isolated Python environment" python3 -m venv "$venv" || fail "could not create Python virtual environment; install the matching python3-venv package"
 fi
 
-"$venv/bin/python" -m pip install --quiet --upgrade "$REPO_ROOT" || fail "could not install the UniFi Observer package"
+ui_run "Installing UniFi Observer package" "$venv/bin/python" -m pip install --quiet --upgrade "$REPO_ROOT" || fail "could not install the UniFi Observer package"
 
 cli_target="$venv/bin/unifi-observer"
 [[ -x "$cli_target" ]] || fail "installed CLI was not found at $cli_target"
@@ -123,10 +126,13 @@ else
   ln -s "$cli_target" "$CLI_PATH"
 fi
 
-printf 'unifi-observer setup: CLI installed at %s\n' "$CLI_PATH"
-printf 'unifi-observer setup: add %s to PATH if the command is not found\n' "$BIN_DIR"
+ui_success "CLI installed at $CLI_PATH"
+ui_info "Add $BIN_DIR to PATH if the command is not found"
 
 if [[ "${UNIFI_OBSERVER_SKIP_CONFIGURE:-0}" != "1" ]]; then
   [[ -t 0 && -t 1 ]] || fail "interactive configuration requires a terminal; set UNIFI_OBSERVER_SKIP_CONFIGURE=1 to install only"
+  ui_success "Installation complete; starting interactive configuration"
   exec "$cli_target" configure
 fi
+
+ui_success "Installation complete (configuration skipped)"

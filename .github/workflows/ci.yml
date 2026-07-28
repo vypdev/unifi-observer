@@ -20,5 +20,6 @@ jobs:
       - run: python -m pytest
       - run: python -m ruff check src tests
       - run: python -m mypy src
+      - run: bash -n install.sh scripts/setup.sh scripts/terminal-ui.sh
       - run: python -m build
       - run: docker compose config --quiet

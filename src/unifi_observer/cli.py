@@ -22,6 +22,7 @@ from .domain.errors import CertificateUploadError, UniFiError
 from .infrastructure.config import Settings
 from .infrastructure.unifi_client import UniFiClient
 from .infrastructure.unifi_web_api_client import UniFiWebApiClient
+from .presentation.terminal import TerminalUI
 
 DEFAULT_CONFIG_PATH = Path("~/.config/unifi-observer/config.env").expanduser()
 DEFAULT_REPOSITORY_URL = "https://github.com/vypdev/unifi-observer.git"
@@ -194,6 +195,7 @@ def _extract_sites(payload: Any) -> list[dict[str, Any]]:
 
 
 def _discover_sites(settings: Settings) -> list[dict[str, Any]]:
+    terminal = TerminalUI()
     tls_ca = settings.ca_cert_path or ("system trust store" if settings.verify_tls else "verification disabled")
     if settings.api_mode == "local":
         api_kind = "local Network Integration"
@@ -201,7 +203,8 @@ def _discover_sites(settings: Settings) -> list[dict[str, Any]]:
     else:
         api_kind = "cloud Site Manager"
         endpoint = "/v1/sites"
-    print("Verifying UniFi API connection:")
+    terminal.banner("UniFi Observer", "Checking the UniFi connection before saving configuration")
+    terminal.step("Verifying UniFi API connection")
     print(f"  mode: {api_kind}")
     print(f"  base URL: {settings.api_base_url}")
     print(f"  endpoint: {endpoint}")
@@ -217,7 +220,7 @@ def _discover_sites(settings: Settings) -> list[dict[str, Any]]:
                 if not _looks_like_tls_failure(exc) or attempt == 4:
                     raise
                 delay = 2**attempt
-                print(f"  TLS reload in progress; retrying in {delay}s")
+                terminal.warning(f"TLS reload in progress; retrying in {delay}s")
                 await asyncio.sleep(delay)
             finally:
                 await client.aclose()
@@ -232,7 +235,7 @@ def _select_site(sites: list[dict[str, Any]]) -> str:
         site_id = sites[0].get("siteId") or sites[0].get("id")
         if site_id:
             return str(site_id)
-    print("Available sites:")
+    TerminalUI().info("Available sites:")
     for index, site in enumerate(sites, 1):
         print(f"  {index}. {site.get('name') or site.get('siteName') or site.get('siteId')}")
     selected = int(_prompt("Select site number"))
@@ -295,10 +298,11 @@ def _generate_local_certificates(config_path: Path, server_id: str | None = None
             raise CliError("certificate configuration cancelled; no files were changed")
     else:
         files = generate_certificates(request)
-    print("Certificate files ready:")
+    terminal = TerminalUI()
+    terminal.success("Certificate files ready")
     for path in files:
         print(f"  - {path}")
-    print(f"Certificate material directory: {output_dir}")
+    terminal.info(f"Certificate material directory: {output_dir}")
     suffix = f"-{server_id}" if server_id else ""
     return (
         output_dir / f"{domain}{suffix}.fullchain.crt",
@@ -444,8 +448,7 @@ def _git_remote_commit(repository_url: str, ref: str) -> str:
         capture_output=True,
     )
     if result.returncode != 0:
-        detail = (result.stderr or "").strip().splitlines()[0][:200] if result.stderr else "unknown error"
-        raise CliError(f"could not query the latest {ref} commit: {detail}")
+        raise CliError(f"could not query the latest {ref} commit")
     commit = (result.stdout or "").split()[0] if (result.stdout or "").split() else ""
     if not re.fullmatch(r"[0-9a-fA-F]{40}", commit):
         raise CliError(f"remote {ref} does not expose a valid commit")
@@ -460,6 +463,7 @@ def _installed_commit(marker_path: Path) -> str | None:
 
 
 def _update() -> int:
+    terminal = TerminalUI()
     if not _unit_path().exists():
         raise CliError("native service is not configured; run 'unifi-observer configure' first")
 
@@ -477,10 +481,11 @@ def _update() -> int:
     remote_commit = _git_remote_commit(repository_url, ref)
 
     if current_commit == remote_commit:
-        print(f"Already up to date: {remote_commit}")
+        terminal.success(f"Already up to date: {remote_commit}")
         return 0
 
-    print(f"Updating UniFi Observer: {current_commit or 'unknown'} -> {remote_commit}")
+    terminal.banner("UniFi Observer update", f"{current_commit or 'unknown'} → {remote_commit}")
+    terminal.step("Downloading the latest master revision")
     with tempfile.TemporaryDirectory(prefix="unifi-observer-update-") as temporary_dir:
         checkout = Path(temporary_dir) / "repository"
         clone = _run_external(
@@ -488,8 +493,7 @@ def _update() -> int:
             capture_output=True,
         )
         if clone.returncode != 0:
-            detail = (clone.stderr or "").strip().splitlines()[0][:200] if clone.stderr else "unknown error"
-            raise CliError(f"could not download update: {detail}")
+            raise CliError("could not download update")
 
         setup = checkout / "scripts" / "setup.sh"
         if not setup.is_file() or not os.access(setup, os.X_OK):
@@ -514,7 +518,7 @@ def _update() -> int:
         raise CliError("update installed, but the native service failed to restart")
     if _systemctl("is-active") != 0:
         raise CliError("update installed, but the native service is not active")
-    print(f"Updated and restarted successfully at commit {installed_commit}")
+    terminal.success(f"Updated and restarted successfully at commit {installed_commit}")
     return 0
 
 
@@ -567,14 +571,12 @@ def _configure(config_path: Path) -> int:
     write_env_file(config_path, _settings_to_values(settings))
     unit = _write_unit(config_path)
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
-    print(f"Configuration written to {config_path}")
-    print(f"Service unit written to {unit}")
-    if settings.api_mode == "local" and settings.api_key:
-        print(f"UniFi API key configured: [REDACTED]...{settings.api_key[-4:]}")
-
+    terminal = TerminalUI()
+    terminal.success(f"Configuration written to {config_path}")
+    terminal.success(f"Service unit written to {unit}")
     if settings.api_mode == "local" and settings.verify_tls:
-        print("TLS connection verified successfully.")
-    print("Run 'unifi-observer start' when ready.")
+        terminal.success("TLS connection verified successfully.")
+    terminal.info("Run 'unifi-observer start' when ready.")
     return 0
 
 
@@ -620,7 +622,7 @@ def main(argv: list[str] | None = None) -> int:
             return _uninstall(config_path)
         raise CliError(f"unsupported command: {args.command}")
     except (CliError, OSError, ValueError, RuntimeError) as exc:
-        print(f"unifi-observer: {exc}", file=sys.stderr)
+        TerminalUI().error(f"unifi-observer: {exc}")
         return 1
     except (EOFError, KeyboardInterrupt):
         print("unifi-observer: input cancelled", file=sys.stderr)

@@ -6,7 +6,13 @@ ROOT = Path(__file__).parents[1]
 
 def test_installer_scripts_are_valid_bash():
     result = subprocess.run(
-        ["bash", "-n", str(ROOT / "install.sh"), str(ROOT / "scripts/setup.sh")],
+        [
+            "bash",
+            "-n",
+            str(ROOT / "install.sh"),
+            str(ROOT / "scripts/setup.sh"),
+            str(ROOT / "scripts/terminal-ui.sh"),
+        ],
         check=False,
         capture_output=True,
         text=True,
@@ -17,6 +23,7 @@ def test_installer_scripts_are_valid_bash():
 def test_installer_defaults_to_https_and_starts_configuration():
     installer = (ROOT / "install.sh").read_text(encoding="utf-8")
     setup = (ROOT / "scripts/setup.sh").read_text(encoding="utf-8")
+    terminal_ui = (ROOT / "scripts/terminal-ui.sh").read_text(encoding="utf-8")
 
     assert "https://github.com/vypdev/unifi-observer.git" in installer
     assert '[[ "$REPOSITORY_URL" == https://* ]]' in installer
@@ -27,6 +34,9 @@ def test_installer_defaults_to_https_and_starts_configuration():
     assert "UNIFI_API_KEY" not in installer
     assert "UNIFI_API_KEY" not in setup
     assert ".unifi-observer-commit" in setup
+    assert "ui_run" in terminal_ui
+    assert "NO_COLOR" in terminal_ui
+    assert "UNIFI_OBSERVER_ASCII" in terminal_ui
 
 
 def test_installer_help_does_not_clone_or_modify_the_host():
