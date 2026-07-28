@@ -109,5 +109,6 @@ class UniFiClient(UniFiGateway):
                 timeout=self.settings.timeout_seconds,
                 verify=self._tls_verify(),
                 transport=self._transport,
+                trust_env=self.settings.api_mode != "local",
             )
         return self._http
