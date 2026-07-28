@@ -18,6 +18,10 @@ class CertificateUploadError(UniFiError):
 class TwoFactorRequiredError(CertificateUploadError):
     """Raised when UniFi requires a one-time authentication token."""
 
+    def __init__(self, message: str, status_code: int | None = None, *, sso: bool = False):
+        super().__init__(message, status_code)
+        self.sso = sso
+
 
 class UniFiCertificateUploader:
     """Use the UniFi OS web-console certificate workflow during bootstrap.
@@ -47,9 +51,13 @@ class UniFiCertificateUploader:
         )
         self._csrf_token: str | None = None
         self._user_id: str | None = None
+        self._mfa_cookie: str | None = None
 
     async def aclose(self) -> None:
         await self._http.aclose()
+        self._csrf_token = None
+        self._user_id = None
+        self._mfa_cookie = None
 
     async def upload_and_activate(
         self,
@@ -113,7 +121,14 @@ class UniFiCertificateUploader:
             raise CertificateUploadError(f"[NETWORK_ERROR] UniFi login unavailable ({type(exc).__name__})") from exc
         response_payload = _response_json(response)
         if response.status_code == 499 and _requires_two_factor(response_payload):
-            raise TwoFactorRequiredError("[TWO_FACTOR_REQUIRED] UniFi Console requires a 2FA token", response.status_code)
+            self._mfa_cookie = _mfa_cookie_from_payload(response_payload)
+            is_sso_mfa = response_payload.get("code") == "MFA_AUTH_REQUIRED"
+            message = (
+                "[TWO_FACTOR_REQUIRED] UniFi SSO requires a 2FA verification step"
+                if is_sso_mfa
+                else "[TWO_FACTOR_REQUIRED] UniFi Console requires a 2FA token"
+            )
+            raise TwoFactorRequiredError(message, response.status_code, sso=is_sso_mfa)
         if response.status_code >= 400:
             if response.status_code == 401:
                 raise CertificateUploadError(
@@ -235,4 +250,14 @@ def _response_json(response: httpx.Response) -> dict[str, Any]:
 
 def _requires_two_factor(payload: dict[str, Any]) -> bool:
     meta = payload.get("meta")
-    return isinstance(meta, dict) and meta.get("msg") == "api.err.Ubic2faTokenRequired"
+    if isinstance(meta, dict) and meta.get("msg") == "api.err.Ubic2faTokenRequired":
+        return True
+    return payload.get("code") == "MFA_AUTH_REQUIRED" and isinstance(payload.get("data"), dict) and payload["data"].get("required") == "2fa"
+
+
+def _mfa_cookie_from_payload(payload: dict[str, Any]) -> str | None:
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return None
+    cookie = data.get("mfaCookie")
+    return cookie if isinstance(cookie, str) and cookie else None

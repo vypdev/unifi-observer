@@ -115,6 +115,33 @@ async def test_upload_rejects_login_without_token():
 
 
 @pytest.mark.asyncio
+async def test_authentication_recognizes_sso_mfa_challenge_and_clears_cookie():
+    uploader = UniFiCertificateUploader(
+        "https://unifi.local",
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                499,
+                json={
+                    "code": "MFA_AUTH_REQUIRED",
+                    "message": "MFA token required to authenticate to SSO",
+                    "data": {
+                        "required": "2fa",
+                        "mfaCookie": "mfa-cookie-placeholder",
+                    },
+                },
+            ),
+        ),
+    )
+
+    with pytest.raises(TwoFactorRequiredError) as error:
+        await uploader.authenticate("admin", "password")
+    assert error.value.sso is True
+    assert uploader._mfa_cookie == "mfa-cookie-placeholder"
+    await uploader.aclose()
+    assert uploader._mfa_cookie is None
+
+
+@pytest.mark.asyncio
 async def test_authentication_resubmits_token_after_2fa_challenge():
     token = jwt_with_csrf("csrf-2fa")
     attempts = []

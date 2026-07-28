@@ -159,6 +159,96 @@ A failed login must be reported separately from an upload failure. In particular
 - connection timeout/DNS/TLS errors: the console could not be reached;
 - `4xx/5xx` after authentication: inspect the operation-specific endpoint and upstream code.
 
+## Login: first SSO/MFA step
+
+### Request
+
+```http
+POST https://<unifi-console-host>/api/auth/login HTTP/1.1
+Host: <unifi-console-host>
+Accept: */*
+Content-Type: application/json
+Origin: https://<unifi-console-host>
+Cookie: JSESSIONID=<session-id>
+```
+
+The browser sent the following body shape:
+
+```json
+{
+  "username": "<username>",
+  "password": "[REDACTED]",
+  "token": "",
+  "rememberMe": false
+}
+```
+
+`token` is empty during the first request. It must not be populated with a guessed value and the administrator password must never be logged or written to configuration.
+
+Browser-only headers (`sec-*`, analytics cookies, device hints, and user-agent) were present in the capture but are not currently treated as required by the adapter.
+
+### MFA challenge response
+
+For the observed SSO account, UniFi returned:
+
+```http
+HTTP 499
+Content-Type: application/json; charset=utf-8
+```
+
+The stable challenge markers were:
+
+```json
+{
+  "code": "MFA_AUTH_REQUIRED",
+  "message": "MFA token required to authenticate to SSO",
+  "data": {
+    "required": "2fa",
+    "mfaCookie": "[REDACTED]",
+    "authenticators": [
+      {"type": "email", "status": "active"},
+      {"type": "webauthn", "status": "active"}
+    ],
+    "user": {
+      "id": "<sso-user-id>",
+      "default_mfa": "<authenticator-id>"
+    },
+    "publicKeyCredentialRequestOptions": {
+      "rpId": "ui.com",
+      "timeout": 60000,
+      "challenge": "[REDACTED]"
+    }
+  }
+}
+```
+
+The complete response may contain masked email addresses, authenticator identifiers, WebAuthn credential identifiers, a challenge, and an `UBIC_2FA`-style temporary cookie. These values are sensitive and must not be logged or documented in full.
+
+### Meaning of HTTP 499 in this flow
+
+This response is not a generic network failure and does not mean that certificate upload failed. It means:
+
+1. UniFi reached the SSO authentication stage;
+2. the account/password step produced an MFA challenge;
+3. the first login request is incomplete;
+4. the temporary MFA cookie/challenge context must be carried into the next verification request;
+5. no permanent session `TOKEN` or API key should be created yet.
+
+The current adapter recognizes both this SSO marker and the older observed marker:
+
+```text
+api.err.Ubic2faTokenRequired
+```
+
+For `MFA_AUTH_REQUIRED`, the adapter stores the temporary MFA cookie only in memory and stops before attempting the legacy `token` retry. The second request is deliberately pending until its actual browser call is captured and documented. This avoids sending an incorrect payload or losing the MFA challenge context.
+
+### Security and lifecycle
+
+- The `mfaCookie` is a bearer-like temporary credential and must be treated as a secret.
+- It must never appear in logs, exceptions, tests with realistic values, commits, or the final summary.
+- It must be cleared when the uploader closes or the flow terminates.
+- The final UniFi `TOKEN` cookie must remain in memory only during bootstrap.
+- The administrator password and the one-time MFA value must never be persisted.
 ## Compatibility policy
 
 Because these routes are used by the UniFi web application rather than exposed as a documented public contract:

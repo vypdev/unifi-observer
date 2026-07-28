@@ -280,7 +280,12 @@ def _upload_local_certificate(
         try:
             try:
                 await uploader.authenticate(username, password)
-            except TwoFactorRequiredError:
+            except TwoFactorRequiredError as exc:
+                if exc.sso:
+                    raise CliError(
+                        "[TWO_FACTOR_VERIFICATION_PENDING] UniFi returned an SSO MFA challenge; "
+                        "the second verification request is required before automatic upload can continue"
+                    ) from exc
                 two_factor_token = _prompt("UniFi 2FA token", secret=True)
                 if not two_factor_token:
                     raise CliError("a UniFi 2FA token is required for automatic certificate upload")
