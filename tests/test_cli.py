@@ -1,4 +1,5 @@
 import stat
+import subprocess
 
 import pytest
 
@@ -7,6 +8,7 @@ from unifi_observer.cli import (
     _configure,
     _generate_local_certificates,
     _prepare_local_tls,
+    _update,
     build_parser,
     load_env_file,
     write_env_file,
@@ -24,6 +26,7 @@ def test_parser_exposes_observer_commands():
         "stop",
         "restart",
         "status",
+        "update",
         "uninstall",
     ):
         args = parser.parse_args([command])
@@ -320,3 +323,66 @@ def test_configure_does_not_persist_after_tls_verification_failure(monkeypatch, 
 
     with pytest.raises(CliError, match="TLS connection verification failed"):
         _configure(tmp_path / "config.env")
+
+
+def test_update_does_not_restart_when_installed_commit_matches(monkeypatch, tmp_path, capsys):
+    commit = "a" * 40
+    install_dir = tmp_path / "install"
+    install_dir.mkdir()
+    (install_dir / ".unifi-observer-commit").write_text(commit, encoding="utf-8")
+    unit = tmp_path / "unifi-observer.service"
+    unit.write_text("unit", encoding="utf-8")
+    monkeypatch.setenv("UNIFI_OBSERVER_INSTALL_DIR", str(install_dir))
+    monkeypatch.setattr("unifi_observer.cli._unit_path", lambda: unit)
+    monkeypatch.setattr("unifi_observer.cli._git_remote_commit", lambda *_: commit)
+    monkeypatch.setattr("unifi_observer.cli._systemctl", lambda _: pytest.fail("service must not be touched"))
+
+    assert _update() == 0
+    assert "Already up to date" in capsys.readouterr().out
+
+
+def test_update_installs_new_commit_before_restarting_service(monkeypatch, tmp_path, capsys):
+    old_commit = "a" * 40
+    new_commit = "b" * 40
+    install_dir = tmp_path / "install"
+    install_dir.mkdir()
+    (install_dir / ".unifi-observer-commit").write_text(old_commit, encoding="utf-8")
+    unit = tmp_path / "unifi-observer.service"
+    unit.write_text("unit", encoding="utf-8")
+    monkeypatch.setenv("UNIFI_OBSERVER_INSTALL_DIR", str(install_dir))
+    monkeypatch.setattr("unifi_observer.cli._unit_path", lambda: unit)
+    monkeypatch.setattr("unifi_observer.cli._git_remote_commit", lambda *_: new_commit)
+    events = []
+
+    class TemporaryCheckout:
+        def __init__(self, path):
+            self.path = path
+
+        def __enter__(self):
+            self.path.mkdir()
+            return str(self.path)
+
+        def __exit__(self, *_):
+            return False
+
+    monkeypatch.setattr("unifi_observer.cli.tempfile.TemporaryDirectory", lambda **_: TemporaryCheckout(tmp_path / "update"))
+
+    def fake_run(command, **kwargs):
+        events.append(command[0:2])
+        if command[:2] == ["git", "clone"]:
+            checkout = tmp_path / "update" / "repository"
+            checkout.mkdir()
+            setup = checkout / "scripts" / "setup.sh"
+            setup.parent.mkdir()
+            setup.write_text("#!/bin/sh\n", encoding="utf-8")
+            setup.chmod(0o700)
+        elif command[:2] == ["bash", str(tmp_path / "update" / "repository" / "scripts" / "setup.sh")]:
+            (install_dir / ".unifi-observer-commit").write_text(new_commit, encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("unifi_observer.cli._run_external", fake_run)
+    monkeypatch.setattr("unifi_observer.cli._systemctl", lambda action: events.append(["systemctl", action]) or 0)
+
+    assert _update() == 0
+    assert events[-2:] == [["systemctl", "restart"], ["systemctl", "is-active"]]
+    assert "Updated and restarted successfully" in capsys.readouterr().out

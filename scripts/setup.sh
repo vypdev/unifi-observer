@@ -110,6 +110,13 @@ fi
 cli_target="$venv/bin/unifi-observer"
 [[ -x "$cli_target" ]] || fail "installed CLI was not found at $cli_target"
 
+if ! commit_marker="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null)"; then
+  fail "could not determine the installed repository commit"
+fi
+printf '%s\n' "$commit_marker" > "$INSTALL_DIR/.unifi-observer-commit.tmp"
+mv -f "$INSTALL_DIR/.unifi-observer-commit.tmp" "$INSTALL_DIR/.unifi-observer-commit"
+chmod 600 "$INSTALL_DIR/.unifi-observer-commit"
+
 if [[ -e "$CLI_PATH" || -L "$CLI_PATH" ]]; then
   [[ -L "$CLI_PATH" && "$(readlink "$CLI_PATH")" == "$cli_target" ]] || fail "$CLI_PATH exists and is not managed by this installer"
 else

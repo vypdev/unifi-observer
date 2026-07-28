@@ -34,6 +34,12 @@ UNIFI_SITE_ID=<site-id>
 
 The exact API paths are kept in the client and can be tested without exposing the key. Consult the API documentation for the installed UniFi version before enabling production use.
 
+In `local` mode, `unifi_list_devices` and `unifi_list_clients` automatically follow the upstream
+pagination fields (`offset`, `limit`, `count`, `totalCount`) and merge every page into one
+complete response. This prevents the MCP from silently exposing only the default first page.
+If the console returns inconsistent pagination metadata, the request fails explicitly instead
+of returning a partial inventory.
+
 `site-manager` currently provides sites, devices, and site details derived from the
 sites response. The `unifi_list_clients` and `unifi_get_health` tools require `local`
 mode because those operations are not part of the current Site Manager API contract.
@@ -90,6 +96,7 @@ unifi-observer start
 unifi-observer stop
 unifi-observer restart
 unifi-observer status
+unifi-observer update
 unifi-observer uninstall
 ```
 
@@ -167,6 +174,21 @@ CA globally is optional and only needed if other applications on the host must t
 console certificate.
 The service is not started automatically; run `unifi-observer start` after reviewing
 the generated unit.
+
+To update an existing native installation, run:
+
+```bash
+unifi-observer update
+```
+
+`update` queries the latest commit on `master`, compares it with the commit marker recorded
+by the installer, and exits without touching the service when they match. When a newer commit
+exists, it downloads that revision into a temporary checkout, runs the installation step with
+configuration skipped, verifies the installed commit marker, restarts the user service, and
+checks that systemd reports it as active. The update never changes `config.env` or generated
+certificate material. `UNIFI_OBSERVER_REPOSITORY_URL`, `UNIFI_OBSERVER_REF`,
+`UNIFI_OBSERVER_INSTALL_DIR`, and `UNIFI_OBSERVER_BIN_DIR` can override the defaults for
+controlled deployments; the repository URL must use HTTPS.
 
 The native service and Coolify deployment use the same MCP application and environment
 contract. Coolify remains the recommended container deployment path; the native CLI is

@@ -7,10 +7,12 @@ import asyncio
 import getpass
 import json
 import os
+import re
 import shlex
 import socket
 import subprocess
 import sys
+import tempfile
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,11 @@ from .infrastructure.unifi_client import UniFiClient
 from .infrastructure.unifi_web_api_client import UniFiWebApiClient
 
 DEFAULT_CONFIG_PATH = Path("~/.config/unifi-observer/config.env").expanduser()
+DEFAULT_REPOSITORY_URL = "https://github.com/vypdev/unifi-observer.git"
+DEFAULT_UPDATE_REF = "master"
+DEFAULT_INSTALL_DIR = Path("~/.local/share/unifi-observer").expanduser()
+DEFAULT_BIN_DIR = Path("~/.local/bin").expanduser()
+COMMIT_MARKER_NAME = ".unifi-observer-commit"
 
 
 class CliError(RuntimeError):
@@ -39,6 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("stop", "stop the native user service"),
         ("restart", "restart the native user service"),
         ("status", "show native user service status"),
+        ("update", "update from the latest commit on the master branch"),
         ("uninstall", "remove the native service and configuration"),
     ):
         commands.add_parser(name, help=help_text)
@@ -413,6 +421,103 @@ def _service_command(action: str) -> int:
     return _systemctl(action)
 
 
+def _run_external(
+    command: list[str],
+    *,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+    capture_output: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        env=env,
+        check=False,
+        text=True,
+        capture_output=capture_output,
+    )
+
+
+def _git_remote_commit(repository_url: str, ref: str) -> str:
+    result = _run_external(
+        ["git", "ls-remote", repository_url, f"refs/heads/{ref}"],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or "").strip().splitlines()[0][:200] if result.stderr else "unknown error"
+        raise CliError(f"could not query the latest {ref} commit: {detail}")
+    commit = (result.stdout or "").split()[0] if (result.stdout or "").split() else ""
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", commit):
+        raise CliError(f"remote {ref} does not expose a valid commit")
+    return commit.lower()
+
+
+def _installed_commit(marker_path: Path) -> str | None:
+    if not marker_path.exists():
+        return None
+    value = marker_path.read_text(encoding="utf-8").strip().lower()
+    return value if re.fullmatch(r"[0-9a-f]{40}", value) else None
+
+
+def _update() -> int:
+    if not _unit_path().exists():
+        raise CliError("native service is not configured; run 'unifi-observer configure' first")
+
+    repository_url = os.environ.get("UNIFI_OBSERVER_REPOSITORY_URL", DEFAULT_REPOSITORY_URL)
+    ref = os.environ.get("UNIFI_OBSERVER_REF", DEFAULT_UPDATE_REF)
+    if not re.fullmatch(r"[A-Za-z0-9._/-]+", ref):
+        raise CliError("UNIFI_OBSERVER_REF contains unsupported characters")
+    if not repository_url.startswith("https://") or any(char in repository_url for char in "\r\n"):
+        raise CliError("repository URL must use HTTPS and contain no newlines")
+
+    install_dir = Path(os.environ.get("UNIFI_OBSERVER_INSTALL_DIR", str(DEFAULT_INSTALL_DIR))).expanduser()
+    bin_dir = Path(os.environ.get("UNIFI_OBSERVER_BIN_DIR", str(DEFAULT_BIN_DIR))).expanduser()
+    marker_path = install_dir / COMMIT_MARKER_NAME
+    current_commit = _installed_commit(marker_path)
+    remote_commit = _git_remote_commit(repository_url, ref)
+
+    if current_commit == remote_commit:
+        print(f"Already up to date: {remote_commit}")
+        return 0
+
+    print(f"Updating UniFi Observer: {current_commit or 'unknown'} -> {remote_commit}")
+    with tempfile.TemporaryDirectory(prefix="unifi-observer-update-") as temporary_dir:
+        checkout = Path(temporary_dir) / "repository"
+        clone = _run_external(
+            ["git", "clone", "--quiet", "--depth", "1", "--branch", ref, repository_url, str(checkout)],
+            capture_output=True,
+        )
+        if clone.returncode != 0:
+            detail = (clone.stderr or "").strip().splitlines()[0][:200] if clone.stderr else "unknown error"
+            raise CliError(f"could not download update: {detail}")
+
+        setup = checkout / "scripts" / "setup.sh"
+        if not setup.is_file() or not os.access(setup, os.X_OK):
+            raise CliError("downloaded repository does not contain an executable scripts/setup.sh")
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "UNIFI_OBSERVER_INSTALL_DIR": str(install_dir),
+                "UNIFI_OBSERVER_BIN_DIR": str(bin_dir),
+                "UNIFI_OBSERVER_SKIP_CONFIGURE": "1",
+            }
+        )
+        setup_result = _run_external(["bash", str(setup)], env=environment)
+        if setup_result.returncode != 0:
+            raise CliError("update installation failed; the existing service was not restarted")
+
+    installed_commit = _installed_commit(marker_path)
+    if installed_commit != remote_commit:
+        raise CliError("update installed successfully but the commit marker could not be verified")
+
+    if _systemctl("restart") != 0:
+        raise CliError("update installed, but the native service failed to restart")
+    if _systemctl("is-active") != 0:
+        raise CliError("update installed, but the native service is not active")
+    print(f"Updated and restarted successfully at commit {installed_commit}")
+    return 0
+
+
 def _looks_like_tls_failure(error: UniFiError) -> bool:
     message = str(error).lower()
     return any(
@@ -509,6 +614,8 @@ def main(argv: list[str] | None = None) -> int:
             return _configure(config_path)
         if args.command in {"start", "stop", "restart", "status"}:
             return _service_command(args.command)
+        if args.command == "update":
+            return _update()
         if args.command == "uninstall":
             return _uninstall(config_path)
         raise CliError(f"unsupported command: {args.command}")

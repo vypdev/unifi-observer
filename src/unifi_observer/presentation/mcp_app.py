@@ -49,12 +49,12 @@ def create_mcp_app(
 
     @app.tool()
     async def unifi_list_devices(site_id: str | None = None) -> dict[str, Any]:
-        """List UniFi devices, optionally restricted to one site."""
+        """List all UniFi devices, optionally restricted to one site."""
         return await call(lambda: use_cases.list_devices(site_id or settings.site_id))
 
     @app.tool()
     async def unifi_list_clients(site_id: str | None = None) -> dict[str, Any]:
-        """List connected UniFi clients, optionally restricted to one site."""
+        """List all connected UniFi clients, optionally restricted to one site."""
         return await call(lambda: use_cases.list_clients(site_id or settings.site_id))
 
     @app.tool()

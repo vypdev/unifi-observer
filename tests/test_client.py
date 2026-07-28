@@ -134,3 +134,110 @@ async def test_site_manager_get_site_filters_the_list_sites_response():
     client = UniFiClient(make_settings(), transport=httpx.MockTransport(handler))
     assert await client.get_site("site-1") == {"siteId": "site-1", "meta": {"name": "Default"}}
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_local_list_clients_fetches_every_page_and_returns_complete_collection():
+    requests: list[tuple[int, int]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        offset = int(request.url.params["offset"])
+        limit = int(request.url.params["limit"])
+        requests.append((offset, limit))
+        pages = {
+            0: [{"id": "client-1"}, {"id": "client-2"}],
+            2: [{"id": "client-3"}],
+        }
+        items = pages[offset]
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "offset": offset,
+                    "limit": limit,
+                    "count": len(items),
+                    "totalCount": 3,
+                    "data": items,
+                }
+            },
+        )
+
+    client = UniFiClient(
+        make_settings(api_mode="local", api_base_url="https://unifi.local"),
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.list_clients("site-1")
+
+    assert result == {
+        "data": {
+            "offset": 0,
+            "limit": 3,
+            "count": 3,
+            "totalCount": 3,
+            "data": [{"id": "client-1"}, {"id": "client-2"}, {"id": "client-3"}],
+        }
+    }
+    assert requests == [(0, 100), (2, 100)]
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_local_list_devices_also_returns_every_page():
+    def handler(request: httpx.Request) -> httpx.Response:
+        offset = int(request.url.params["offset"])
+        items = [{"id": f"device-{offset}"}] if offset == 0 else []
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "offset": offset,
+                    "limit": 100,
+                    "count": len(items),
+                    "totalCount": 1,
+                    "data": items,
+                }
+            },
+        )
+
+    client = UniFiClient(
+        make_settings(api_mode="local", api_base_url="https://unifi.local"),
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert await client.list_devices("site-1") == {
+        "data": {
+            "offset": 0,
+            "limit": 1,
+            "count": 1,
+            "totalCount": 1,
+            "data": [{"id": "device-0"}],
+        }
+    }
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_local_pagination_rejects_upstream_that_ignores_offset():
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "offset": 0,
+                    "limit": 100,
+                    "count": 1,
+                    "totalCount": 2,
+                    "data": [{"id": "same-page"}],
+                }
+            },
+        )
+
+    client = UniFiClient(
+        make_settings(api_mode="local", api_base_url="https://unifi.local"),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(UniFiAPIError, match="unexpected offset"):
+        await client.list_clients("site-1")
+    await client.aclose()

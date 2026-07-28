@@ -26,6 +26,7 @@ def test_installer_defaults_to_https_and_starts_configuration():
     assert "sudo is required to install missing system packages" in setup
     assert "UNIFI_API_KEY" not in installer
     assert "UNIFI_API_KEY" not in setup
+    assert ".unifi-observer-commit" in setup
 
 
 def test_installer_help_does_not_clone_or_modify_the_host():

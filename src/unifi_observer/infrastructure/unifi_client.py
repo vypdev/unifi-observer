@@ -53,7 +53,7 @@ class UniFiClient(UniFiGateway):
         if self.settings.api_mode == "local":
             if not site_id:
                 raise UniFiAPIError("site_id is required in local mode")
-            return await self.get_site_json(site_id, self.path("sites/{site_id}/devices"))
+            return await self._list_all_local_pages(site_id, "devices")
         params = {"siteId": site_id} if site_id else None
         return await self.get_json(self.path("devices"), params)
 
@@ -61,8 +61,69 @@ class UniFiClient(UniFiGateway):
         if self.settings.api_mode == "local":
             if not site_id:
                 raise UniFiAPIError("site_id is required in local mode")
-            return await self.get_site_json(site_id, self.path("sites/{site_id}/clients"))
+            return await self._list_all_local_pages(site_id, "clients")
         raise UniFiAPIError("list_clients is not supported by the site-manager API")
+
+    async def _list_all_local_pages(self, site_id: str, resource: str) -> Any:
+        """Fetch every page returned by the local Network Integration API."""
+        page_size = 100
+        offset = 0
+        items: list[Any] = []
+        first_payload: Any = None
+        total_count: int | None = None
+
+        while True:
+            payload = await self.get_site_json(
+                site_id,
+                self.path(f"sites/{{site_id}}/{resource}"),
+                params={"offset": offset, "limit": page_size},
+            )
+            if first_payload is None:
+                first_payload = payload
+
+            page = payload.get("data") if isinstance(payload, dict) else None
+            if not isinstance(page, dict):
+                return payload if not items else self._merge_page_payload(first_payload, items, len(items))
+
+            reported_offset = page.get("offset")
+            if isinstance(reported_offset, int) and reported_offset != offset:
+                raise UniFiAPIError(f"UniFi pagination returned unexpected offset while listing {resource}")
+
+            page_items = page.get("data")
+            if not isinstance(page_items, list):
+                return payload if not items else self._merge_page_payload(first_payload, items, len(items))
+
+            items.extend(page_items)
+            total_value = page.get("totalCount")
+            if isinstance(total_value, int) and total_value >= 0:
+                total_count = total_value
+
+            if not page_items or (total_count is not None and len(items) >= total_count):
+                break
+
+            next_offset = offset + len(page_items)
+            if next_offset <= offset:
+                raise UniFiAPIError(f"UniFi pagination stalled while listing {resource}")
+            offset = next_offset
+
+        return self._merge_page_payload(first_payload, items, total_count or len(items))
+
+    @staticmethod
+    def _merge_page_payload(payload: Any, items: list[Any], total_count: int) -> Any:
+        if not isinstance(payload, dict) or not isinstance(payload.get("data"), dict):
+            return payload
+        page = payload["data"]
+        return {
+            **payload,
+            "data": {
+                **page,
+                "offset": 0,
+                "limit": len(items),
+                "count": len(items),
+                "totalCount": total_count,
+                "data": items,
+            },
+        }
 
     async def get_health(self, site_id: str | None = None):
         if self.settings.api_mode == "local":
