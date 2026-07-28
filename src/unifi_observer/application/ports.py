@@ -5,6 +5,9 @@ from ..domain.unifi_web_api_models import (
     ActivateCertificateResponse,
     CreateApiKeyRequest,
     CreateApiKeyResponse,
+    DeleteApiKeyRequest,
+    DeleteCertificateRequest,
+    DeleteResourceResponse,
     LoginRequest,
     LoginResponse,
     LoginSuccessResponse,
@@ -43,6 +46,10 @@ class UniFiWebConsolePort(Protocol):
     async def activate_certificate(self, request: ActivateCertificateRequest) -> ActivateCertificateResponse: ...
 
     async def create_api_key(self, request: CreateApiKeyRequest) -> CreateApiKeyResponse: ...
+
+    async def delete_api_key(self, request: DeleteApiKeyRequest) -> DeleteResourceResponse: ...
+
+    async def delete_certificate(self, request: DeleteCertificateRequest) -> DeleteResourceResponse: ...
 
     async def aclose(self) -> None: ...
 

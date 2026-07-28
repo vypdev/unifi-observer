@@ -146,6 +146,62 @@ keeps `unifi-observer` read-only, but it does **not** reduce the privileges enco
 
 For production use, prefer a dedicated local UniFi account with the minimum permissions supported by the console. If the firmware does not provide a sufficiently restricted key for the required Network Integration endpoints, document that limitation and require explicit user approval before persisting the key.
 
+## Delete a local UniFi API key
+
+The web console deletes an API key by its resource ID:
+
+```http
+DELETE https://<unifi-console-host>/proxy/users/api/v2/keys/<api-key-id> HTTP/1.1
+Host: <unifi-console-host>
+Accept: */*
+X-Csrf-Token: <csrf-token>
+Cookie: TOKEN=<session-token>; JSESSIONID=<session-id>
+```
+
+Observed response:
+
+```http
+HTTP 200 OK
+Content-Type: application/json; charset=utf-8
+```
+
+```json
+{
+  "code": 1,
+  "codeS": "SUCCESS",
+  "msg": "success",
+  "data": "success"
+}
+```
+
+The adapter requires the authenticated session and CSRF token, accepts only a specific
+resource ID, and never searches for or deletes unrelated keys. The key ID is metadata and
+may be persisted with the local configuration; the full API key remains secret.
+
+## Delete an uploaded certificate
+
+The web console deletes an uploaded certificate by its resource ID:
+
+```http
+DELETE https://<unifi-console-host>/api/userCertificates/<certificate-id> HTTP/1.1
+Host: <unifi-console-host>
+Accept: */*
+X-Csrf-Token: <csrf-token>
+Cookie: TOKEN=<session-token>; JSESSIONID=<session-id>
+```
+
+Observed response:
+
+```http
+HTTP 204 No Content
+```
+
+The adapter treats any successful 2xx response as deletion success and preserves the
+status code in the typed response. Certificate deletion must be performed only for a
+certificate ID owned by the configured server identity. Deleting the active console
+certificate can affect the console HTTPS service; callers must activate a replacement
+and verify connectivity before cleanup.
+
 ## Authentication and session prerequisites
 
 The key-creation request is downstream of the web-console login flow:

@@ -129,6 +129,23 @@ class ActivateCertificateResponse:
 
 
 @dataclass(frozen=True)
+class DeleteApiKeyRequest:
+    key_id: str
+
+
+@dataclass(frozen=True)
+class DeleteCertificateRequest:
+    certificate_id: str
+
+
+@dataclass(frozen=True)
+class DeleteResourceResponse:
+    status_code: int
+    deleted: bool
+    raw: JsonObject = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
 class CreateApiKeyRequest:
     user_id: str
     name: str

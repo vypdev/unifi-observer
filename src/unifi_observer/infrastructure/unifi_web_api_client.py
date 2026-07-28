@@ -14,6 +14,9 @@ from ..domain.unifi_web_api_models import (
     ActivateCertificateResponse,
     CreateApiKeyRequest,
     CreateApiKeyResponse,
+    DeleteApiKeyRequest,
+    DeleteCertificateRequest,
+    DeleteResourceResponse,
     LoginRequest,
     LoginResponse,
     LoginSuccessResponse,
@@ -116,6 +119,20 @@ class UniFiWebApiClient:
             raise CertificateUploadError("UniFi API key creation returned no key")
         return result
 
+    async def delete_api_key(self, request: DeleteApiKeyRequest) -> DeleteResourceResponse:
+        """Delete one API key by its UniFi resource ID."""
+        return await self._delete_resource(
+            f"/proxy/users/api/v2/keys/{request.key_id}",
+            "API_KEY_DELETION_FAILED",
+        )
+
+    async def delete_certificate(self, request: DeleteCertificateRequest) -> DeleteResourceResponse:
+        """Delete one uploaded certificate by its UniFi resource ID."""
+        return await self._delete_resource(
+            f"/api/userCertificates/{request.certificate_id}",
+            "CERTIFICATE_DELETION_FAILED",
+        )
+
     def _success_response(self, response: httpx.Response, payload: dict[str, Any]) -> LoginSuccessResponse:
         token = response.cookies.get("TOKEN") or self._http.cookies.get("TOKEN")
         csrf = response.headers.get("X-Csrf-Token") or _csrf_from_token(token)
@@ -148,6 +165,17 @@ class UniFiWebApiClient:
             return await self._http.put(path, json=payload, headers=headers)
         except httpx.HTTPError as exc:
             raise CertificateUploadError(f"[NETWORK_ERROR] UniFi web API unavailable ({type(exc).__name__})") from exc
+
+    async def _delete_resource(self, path: str, category: str) -> DeleteResourceResponse:
+        csrf = self._require_csrf()
+        try:
+            response = await self._http.delete(path, headers={"X-Csrf-Token": csrf})
+        except httpx.HTTPError as exc:
+            raise CertificateUploadError(f"[NETWORK_ERROR] UniFi web API unavailable ({type(exc).__name__})") from exc
+        payload = parse_payload(response)
+        if response.status_code >= 400:
+            raise _failure(category, response, payload)
+        return DeleteResourceResponse(response.status_code, True, payload)
 
 
 def _requires_mfa(payload: dict[str, Any]) -> bool:

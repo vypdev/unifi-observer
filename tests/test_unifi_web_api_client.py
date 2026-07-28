@@ -7,6 +7,8 @@ import pytest
 from unifi_observer.domain.unifi_web_api_models import (
     ActivateCertificateRequest,
     CreateApiKeyRequest,
+    DeleteApiKeyRequest,
+    DeleteCertificateRequest,
     LoginRequest,
     MfaChallengeResponse,
     TwoFactorRequest,
@@ -62,6 +64,10 @@ async def test_typed_web_api_client_exposes_login_mfa_upload_activation_and_key(
                 200,
                 json={"data": {"id": "key-1", "name": "unifi-observer", "full_api_key": "secret-key"}},
             )
+        if request.method == "DELETE" and request.url.path == "/proxy/users/api/v2/keys/key-1":
+            return httpx.Response(200, json={"code": 1, "codeS": "SUCCESS", "data": "success"})
+        if request.method == "DELETE" and request.url.path == "/api/userCertificates/certificate-1":
+            return httpx.Response(204)
         raise AssertionError(f"unexpected request: {request.url.path}")
 
     client = UniFiWebApiClient("https://unifi.local", transport=httpx.MockTransport(handler))
@@ -85,12 +91,16 @@ async def test_typed_web_api_client_exposes_login_mfa_upload_activation_and_key(
     created = await client.create_api_key(CreateApiKeyRequest("user-1", "unifi-observer", "integration"))
     assert created.key.key_id == "key-1"
     assert created.key.full_api_key == "secret-key"
+    assert (await client.delete_api_key(DeleteApiKeyRequest("key-1"))).deleted is True
+    assert (await client.delete_certificate(DeleteCertificateRequest("certificate-1"))).deleted is True
     assert calls == [
         "/api/auth/login",
         "/api/auth/login",
         "/api/userCertificates",
         "/api/userCertificates/certificate-1/status",
         "/proxy/users/api/v2/user/user-1/keys",
+        "/proxy/users/api/v2/keys/key-1",
+        "/api/userCertificates/certificate-1",
     ]
     await client.aclose()
 
