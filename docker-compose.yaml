@@ -2,8 +2,17 @@ services:
   unifi-mcp:
     build: .
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      UNIFI_API_MODE: ${UNIFI_API_MODE:-site-manager}
+      UNIFI_API_BASE_URL: ${UNIFI_API_BASE_URL:-https://api.ui.com}
+      UNIFI_API_KEY: ${UNIFI_API_KEY:-}
+      UNIFI_SITE_ID: ${UNIFI_SITE_ID:-}
+      UNIFI_ALLOWED_SITE_IDS: ${UNIFI_ALLOWED_SITE_IDS:-}
+      UNIFI_VERIFY_TLS: ${UNIFI_VERIFY_TLS:-true}
+      UNIFI_TIMEOUT_SECONDS: ${UNIFI_TIMEOUT_SECONDS:-15}
+      UNIFI_ENABLE_WRITE: ${UNIFI_ENABLE_WRITE:-false}
+      MCP_HOST: ${MCP_HOST:-0.0.0.0}
+      MCP_PORT: ${MCP_PORT:-8000}
     ports:
       - "8000:8000"
     read_only: true

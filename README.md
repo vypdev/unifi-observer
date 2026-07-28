@@ -1,6 +1,6 @@
 # UniFi MCP Coolify
 
-Read-only-first Model Context Protocol (MCP) server for UniFi Site Manager or the UniFi Network Integration API.
+Read-only-first Model Context Protocol (MCP) server for UniFi Site Manager or a local UniFi console.
 
 The service is designed for deployment in Coolify and consumption by Hermes and OpenClaw through **Streamable HTTP**. It does not expose write tools in the initial release. Network modifications remain disabled by default and will require a separate, explicitly reviewed capability.
 
@@ -23,10 +23,10 @@ UNIFI_API_BASE_URL=https://api.ui.com
 UNIFI_API_KEY=[REDACTED]
 ```
 
-### UniFi Network Integration API
+### Local UniFi Network API
 
 ```env
-UNIFI_API_MODE=network-integration
+UNIFI_API_MODE=local
 UNIFI_API_BASE_URL=https://<unifi-console>
 UNIFI_API_KEY=[REDACTED]
 UNIFI_SITE_ID=<site-id>
@@ -34,14 +34,71 @@ UNIFI_SITE_ID=<site-id>
 
 The exact API paths are kept in the client and can be tested without exposing the key. Consult the API documentation for the installed UniFi version before enabling production use.
 
+`network-integration` remains accepted as a backward-compatible alias for `local`,
+but new deployments should use `local`.
+
+`site-manager` currently provides sites, devices, and site details derived from the
+sites response. The `unifi_list_clients` and `unifi_get_health` tools require `local`
+mode because those operations are not part of the current Site Manager API contract.
+
 ## Local development
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e '.[test]'
 .venv/bin/pytest
+set -a; . ./.env; set +a
 UNIFI_API_BASE_URL=https://api.ui.com \
   .venv/bin/unifi-mcp
+```
+
+The application reads configuration from the process environment; it does not load
+`.env` files itself. The `set -a` step above is for local development only. Coolify
+should inject the variables through its environment/secret configuration.
+
+## Local UniFi TLS certificate helper
+
+For a local UniFi console that uses a self-issued certificate, the repository includes
+an OpenSSL-based helper that creates a local CA and a server certificate containing both
+the DNS name and IP address as Subject Alternative Names (SANs):
+
+```bash
+./scripts/generate_unifi_cert.py \
+  --domain unifi.local \
+  --ip 192.168.0.1 \
+  --organization "Efra Home Lab" \
+  --common-name unifi.local \
+  --output-dir ./unifi-certs
+```
+
+Omit the input options to be prompted interactively. For unattended use, pass all four
+identity options together with `--non-interactive`. The helper requires the `openssl`
+executable on `PATH`. It generates private keys, CA/server certificates, a CSR, and a
+full-chain certificate. It does not overwrite existing files unless `--force` is
+passed, applies restrictive permissions to private keys, and prints the next deployment
+steps without printing key material.
+
+For a trusted local deployment:
+
+1. Upload `<domain>.fullchain.crt` and `<domain>.key` to the UniFi console.
+2. Install `unifi-local-ca.crt`—the CA, not the server certificate—in the trust store of the MCP host. On Debian/Ubuntu:
+   ```bash
+   sudo cp unifi-local-ca.crt /usr/local/share/ca-certificates/unifi-local-ca.crt
+   sudo update-ca-certificates
+   ```
+3. Resolve the domain to the console IP on the MCP host.
+4. Keep `UNIFI_VERIFY_TLS=true` and use the generated domain in `UNIFI_API_BASE_URL`.
+
+Never commit the generated directory or private keys.
+
+For the full quality gate, install the development tools and run:
+
+```bash
+.venv/bin/pip install -e '.[test,dev]'
+.venv/bin/pytest
+.venv/bin/ruff check src tests
+.venv/bin/mypy src
+.venv/bin/python -m build
 ```
 
 The server listens on port `8000` by default:
@@ -54,7 +111,12 @@ POST /mcp       # Streamable HTTP MCP endpoint
 
 ## Coolify
 
-Create a Docker Compose application from this repository and provide the variables in `.env.example` through Coolify's environment settings. Do not commit the actual values. Keep the application private to the trusted network or protect it with an authenticated reverse proxy before adding it to Hermes or OpenClaw.
+Create a Docker Compose application from this repository. The Compose file declares
+all runtime variables with safe defaults, so Coolify can pre-populate them when the
+repository is imported. Set `UNIFI_API_KEY` explicitly as a Coolify secret; it has no
+committed default. Do not commit actual values. Keep the application private to the
+trusted network or protect it with an authenticated reverse proxy before adding it to
+Hermes or OpenClaw.
 
 ## MCP client configuration
 

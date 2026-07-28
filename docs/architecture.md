@@ -12,7 +12,7 @@ OpenClaw ─────┤──────────────┐
               │
               ▼
       UniFi Site Manager API
-      or Network Integration API
+      or local UniFi Network API
 ```
 
 The MCP server is stateless at the HTTP transport layer. It does not rely on one long-lived SSE connection or a client-specific session surviving between tool calls.
@@ -27,16 +27,45 @@ The MCP server is stateless at the HTTP transport layer. It does not rely on one
 
 The repository currently implements only `read-only`.
 
+## Internal Clean Architecture
+
+The runtime is split into explicit dependency boundaries:
+
+```text
+presentation  →  application  →  domain
+      ↑              ↑
+infrastructure ──────┘
+             composition wires all layers
+```
+
+- `domain`: application errors and policies with no transport or vendor dependencies;
+- `application`: read-only use cases and the `UniFiGateway` port;
+- `infrastructure`: environment configuration and the `httpx` UniFi adapter;
+- `presentation`: MCP tools and HTTP health/readiness routes;
+- `composition`: production dependency wiring and process entry point.
+
+The MCP adapter receives use cases through dependency injection. It must not construct
+HTTP clients or read environment variables during module import. This keeps use cases
+unit-testable and allows future CLI, HTTP, or OpenClaw adapters without changing the
+application layer.
+
 ## API modes
 
 - `site-manager`: official cloud API, normally `https://api.ui.com` and `X-API-Key`.
-- `network-integration`: local UniFi console integration API, with a configurable console URL and site ID.
+- `local`: local UniFi Network API, with a configurable console URL and site ID.
+
+The legacy value `network-integration` is accepted as a compatibility alias and is
+normalized to `local` at configuration boundaries.
 
 The upstream contract must be checked against the installed UniFi version before production deployment. The client deliberately returns bounded errors instead of dumping upstream response bodies into model context.
 
+The current Site Manager contract covers sites and devices. Client inventory and
+per-site health use the local mode; in `site-manager` those tools return an explicit
+unsupported-operation error instead of probing undocumented endpoints.
+
 ## Transport decision
 
-The previous server exposed legacy `/sse` and returned an endpoint event, but did not deliver the JSON-RPC response after `initialize`. This implementation uses MCP Streamable HTTP at `/mcp` with `stateless_http=true` and JSON responses. Local smoke tests verified initialization, tool listing, and repeated calls.
+The previous server exposed legacy `/sse` and returned an endpoint event, but did not deliver the JSON-RPC response after `initialize`. This implementation uses MCP Streamable HTTP at `/mcp` with `stateless_http=true` and JSON responses. Contract tests cover tool registration and invocation through the presentation adapter; the release smoke-test procedure covers HTTP initialization and repeated calls.
 
 ## Deployment boundary
 

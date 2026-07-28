@@ -20,6 +20,20 @@ def make_settings(**overrides):
     return Settings(**values)
 
 
+def test_network_integration_alias_is_normalized_to_local():
+    assert make_settings(api_mode="network-integration").api_mode == "local"
+
+
+def test_local_mode_uses_network_integration_paths():
+    client = UniFiClient(make_settings(api_mode="local"), transport=httpx.MockTransport(lambda _: httpx.Response(200)))
+    assert client.path("sites/site-1/devices") == "/proxy/network/integration/v1/sites/site-1/devices"
+
+
+def test_invalid_mode_is_rejected():
+    with pytest.raises(ValueError, match="site-manager or local"):
+        make_settings(api_mode="unsupported")
+
+
 @pytest.mark.asyncio
 async def test_get_json_uses_x_api_key_and_returns_payload():
     seen = {}
@@ -63,4 +77,26 @@ async def test_http_errors_are_normalized_without_response_dump():
         await client.get_json("/v1/sites")
     assert error.value.status_code == 503
     assert "upstream internal details" not in str(error.value)
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_site_manager_rejects_operations_not_in_official_contract():
+    client = UniFiClient(make_settings(), transport=httpx.MockTransport(lambda _: httpx.Response(500)))
+
+    with pytest.raises(UniFiAPIError, match="not supported"):
+        await client.list_clients()
+    with pytest.raises(UniFiAPIError, match="not supported"):
+        await client.get_health()
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_site_manager_get_site_filters_the_list_sites_response():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/sites"
+        return httpx.Response(200, json={"data": [{"siteId": "site-1", "meta": {"name": "Default"}}]})
+
+    client = UniFiClient(make_settings(), transport=httpx.MockTransport(handler))
+    assert await client.get_site("site-1") == {"siteId": "site-1", "meta": {"name": "Default"}}
     await client.aclose()
