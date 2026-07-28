@@ -34,7 +34,9 @@ def test_discover_sites_reports_header_presence_without_secret(monkeypatch, caps
     monkeypatch.setattr("unifi_observer.cli.UniFiClient", FakeClient)
     _discover_sites(_local_settings_with_key())
     output = capsys.readouterr().out
-    assert "official_api_request: X-API-Key present" in output
+    assert "official_api_request: local Network Integration" in output
+    assert "base_url=https://unifi.local" in output
+    assert "endpoint=/proxy/network/integration/v1/sites" in output
     assert "secret-value" not in output
 
 

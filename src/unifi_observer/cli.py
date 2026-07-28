@@ -172,8 +172,16 @@ def _extract_sites(payload: Any) -> list[dict[str, Any]]:
 
 
 def _discover_sites(settings: Settings) -> list[dict[str, Any]]:
+    if settings.api_mode == "local":
+        api_kind = "local Network Integration"
+        endpoint = "/proxy/network/integration/v1/sites"
+    else:
+        api_kind = "cloud Site Manager"
+        endpoint = "/v1/sites"
     print(
-        "official_api_request: X-API-Key "
+        f"official_api_request: {api_kind}; "
+        f"base_url={settings.api_base_url}; endpoint={endpoint}; "
+        "X-API-Key "
         + ("present" if settings.api_key else "absent")
     )
 
@@ -394,6 +402,8 @@ def _configure(config_path: Path) -> int:
     except UniFiError as exc:
         if exc.status_code is not None:
             print(f"official_api_response: HTTP {exc.status_code}")
+        else:
+            print("official_api_response: connection_error")
         if exc.status_code in {401, 403}:
             raise CliError(
                 "UniFi official API rejected the API key (HTTP "

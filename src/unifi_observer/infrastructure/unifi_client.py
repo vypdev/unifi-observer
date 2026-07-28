@@ -33,6 +33,9 @@ class UniFiClient(UniFiGateway):
     async def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
         try:
             response = await self._ensure_http().get(path, params=params)
+        except httpx.ConnectError as exc:
+            detail = str(exc).replace(self.settings.api_base_url, "<unifi-api>")[:240]
+            raise UniFiAPIError(f"UniFi upstream connection failed: {detail}") from exc
         except httpx.HTTPError as exc:
             raise UniFiAPIError(f"UniFi upstream unavailable: {type(exc).__name__}") from exc
         if response.status_code >= 400:
