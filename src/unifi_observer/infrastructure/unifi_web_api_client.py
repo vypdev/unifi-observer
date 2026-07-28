@@ -17,6 +17,10 @@ from ..domain.unifi_web_api_models import (
     DeleteApiKeyRequest,
     DeleteCertificateRequest,
     DeleteResourceResponse,
+    ListApiKeysRequest,
+    ListApiKeysResponse,
+    ListCertificatesRequest,
+    ListCertificatesResponse,
     LoginRequest,
     LoginResponse,
     LoginSuccessResponse,
@@ -25,7 +29,9 @@ from ..domain.unifi_web_api_models import (
     TwoFactorRequest,
     UploadCertificateRequest,
     UploadCertificateResponse,
+    parse_api_key_list,
     parse_api_key_response,
+    parse_certificate_list,
     parse_mfa_challenge,
     parse_payload,
     parse_user_profile,
@@ -133,6 +139,32 @@ class UniFiWebApiClient:
             "CERTIFICATE_DELETION_FAILED",
         )
 
+    async def list_api_keys(self, request: ListApiKeysRequest) -> ListApiKeysResponse:
+        """List API keys belonging to the authenticated UniFi user."""
+        csrf = self._require_csrf()
+        response = await self._get(
+            f"/proxy/users/api/v2/user/{request.user_id}/keys",
+            "API_KEY_LIST_FAILED",
+            headers={"X-Csrf-Token": csrf},
+        )
+        payload = parse_payload(response)
+        if response.status_code >= 400:
+            raise _failure("API_KEY_LIST_FAILED", response, payload)
+        return parse_api_key_list(response.status_code, payload)
+
+    async def list_certificates(self, request: ListCertificatesRequest) -> ListCertificatesResponse:
+        """List certificates uploaded to the UniFi OS console."""
+        csrf = self._require_csrf()
+        response = await self._get(
+            "/api/userCertificates",
+            "CERTIFICATE_LIST_FAILED",
+            headers={"X-Csrf-Token": csrf},
+        )
+        payload = parse_payload(response)
+        if response.status_code >= 400:
+            raise _failure("CERTIFICATE_LIST_FAILED", response, payload)
+        return parse_certificate_list(response.status_code, _response_json(response))
+
     def _success_response(self, response: httpx.Response, payload: dict[str, Any]) -> LoginSuccessResponse:
         token = response.cookies.get("TOKEN") or self._http.cookies.get("TOKEN")
         csrf = response.headers.get("X-Csrf-Token") or _csrf_from_token(token)
@@ -176,6 +208,19 @@ class UniFiWebApiClient:
         if response.status_code >= 400:
             raise _failure(category, response, payload)
         return DeleteResourceResponse(response.status_code, True, payload)
+
+    async def _get(self, path: str, category: str, headers: dict[str, str] | None = None) -> httpx.Response:
+        try:
+            return await self._http.get(path, headers=headers)
+        except httpx.HTTPError as exc:
+            raise CertificateUploadError(f"[NETWORK_ERROR] UniFi web API unavailable ({type(exc).__name__})") from exc
+
+
+def _response_json(response: httpx.Response) -> Any:
+    try:
+        return response.json()
+    except ValueError:
+        return None
 
 
 def _requires_mfa(payload: dict[str, Any]) -> bool:

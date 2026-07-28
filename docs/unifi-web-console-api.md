@@ -134,6 +134,89 @@ The adapter must:
 6. never print the complete value;
 7. close the web session in a `finally` block.
 
+## List local UniFi API keys
+
+The web console lists API keys for the authenticated user through the user-scoped endpoint:
+
+```http
+GET https://<unifi-console-host>/proxy/users/api/v2/user/<user-id>/keys HTTP/1.1
+Host: <unifi-console-host>
+Accept: */*
+X-Csrf-Token: <csrf-token>
+Cookie: TOKEN=<session-token>; JSESSIONID=<session-id>
+```
+
+Observed successful response shape:
+
+```json
+{
+  "code": 1,
+  "codeS": "SUCCESS",
+  "msg": "success",
+  "data": [
+    {
+      "id": "<api-key-id>",
+      "name": "<key-name>",
+      "masked_api_key": "<masked-key>",
+      "created_at": "<timestamp>",
+      "updated_at": "<timestamp>",
+      "permissions": {},
+      "key_permissions": [],
+      "scopes": [],
+      "creator_user_id": "<user-id>",
+      "last_used_at": "<timestamp>",
+      "description": "<description>"
+    }
+  ]
+}
+```
+
+The complete response may contain broad permission and scope collections. The typed adapter
+exposes identifiers, names, descriptions, timestamps, masked keys, and authorization metadata;
+it never treats `masked_api_key` as a usable credential and never expects the full key from a
+list response. Matching for server-owned resources must use an exact name and authenticated
+user ID, never a partial name or a global key search.
+
+## List uploaded certificates
+
+The web console lists uploaded certificates through:
+
+```http
+GET https://<unifi-console-host>/api/userCertificates HTTP/1.1
+Host: <unifi-console-host>
+Accept: */*
+X-Csrf-Token: <csrf-token>
+Cookie: TOKEN=<session-token>; JSESSIONID=<session-id>
+```
+
+Observed successful response shape:
+
+```json
+[
+  {
+    "id": "<certificate-id>",
+    "name": "<certificate-name>",
+    "version": 3,
+    "serial_number": "<serial-number>",
+    "fingerprint": "<fingerprint>",
+    "subject": {"O": "<organization>", "CN": "<common-name>"},
+    "issuer": {"O": "<organization>", "CN": "<issuer-common-name>"},
+    "subject_alt_name": {"DNS": ["<dns-name>"], "IP Address": ["<ip-address>"]},
+    "valid_from": "<timestamp>",
+    "valid_to": "<timestamp>",
+    "created_at": "<timestamp>",
+    "updated_at": "<timestamp>",
+    "source": "uploaded",
+    "acme_renew_error": null,
+    "active": true
+  }
+]
+```
+
+The typed adapter preserves certificate identity, subject, issuer, SANs, validity, source,
+renewal status, and active state. Private key material is never returned by this endpoint and
+must not be inferred from certificate metadata.
+
 ### Permissions warning
 
 The observed response granted broad administrator permissions to the generated key. The application-level setting:

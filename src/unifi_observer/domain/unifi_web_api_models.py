@@ -146,6 +146,16 @@ class DeleteResourceResponse:
 
 
 @dataclass(frozen=True)
+class ListApiKeysRequest:
+    user_id: str
+
+
+@dataclass(frozen=True)
+class ListCertificatesRequest:
+    pass
+
+
+@dataclass(frozen=True)
 class CreateApiKeyRequest:
     user_id: str
     name: str
@@ -165,6 +175,11 @@ class ApiKeyMetadata:
     scopes: tuple[str, ...] = ()
     full_api_key: str | None = field(default=None, repr=False)
     raw: JsonObject = field(default_factory=dict, repr=False)
+    masked_api_key: str | None = None
+    creator_user_id: str | None = None
+    last_used_at: str | None = None
+    permissions: JsonObject = field(default_factory=dict, repr=False)
+    key_permissions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -172,6 +187,40 @@ class CreateApiKeyResponse:
     status_code: int
     key: ApiKeyMetadata
     raw: JsonObject = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
+class ListApiKeysResponse:
+    status_code: int
+    keys: tuple[ApiKeyMetadata, ...]
+    raw: JsonObject = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
+class CertificateMetadata:
+    certificate_id: str | None
+    name: str | None
+    version: int | None
+    serial_number: str | None
+    fingerprint: str | None
+    subject: JsonObject
+    issuer: JsonObject
+    subject_alt_name: JsonObject
+    valid_from: str | None
+    valid_to: str | None
+    created_at: str | None
+    updated_at: str | None
+    source: str | None
+    acme_renew_error: str | None
+    active: bool | None
+    raw: JsonObject = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
+class ListCertificatesResponse:
+    status_code: int
+    certificates: tuple[CertificateMetadata, ...]
+    raw: tuple[JsonObject, ...] = field(default_factory=tuple, repr=False)
 
 
 def _value(payload: JsonObject, key: str) -> Any:
@@ -263,8 +312,72 @@ def parse_api_key_response(status_code: int, payload: JsonObject) -> CreateApiKe
             scopes=_strings(data.get("scopes")),
             full_api_key=_string(data, "full_api_key"),
             raw=data,
+            masked_api_key=_string(data, "masked_api_key"),
+            creator_user_id=_string(data, "creator_user_id"),
+            last_used_at=_string(data, "last_used_at"),
+            permissions=_object(data.get("permissions")),
+            key_permissions=_strings(data.get("key_permissions")),
         ),
         raw=payload,
+    )
+
+
+def parse_api_key_list(status_code: int, payload: JsonObject) -> ListApiKeysResponse:
+    data = payload.get("data")
+    items = data if isinstance(data, list) else []
+    return ListApiKeysResponse(
+        status_code=status_code,
+        keys=tuple(_parse_api_key_metadata(_object(item)) for item in items),
+        raw=payload,
+    )
+
+
+def _parse_api_key_metadata(data: dict[str, Any]) -> ApiKeyMetadata:
+    return ApiKeyMetadata(
+        key_id=_string(data, "id") or _string(data, "key_id"),
+        name=_string(data, "name"),
+        description=_string(data, "description"),
+        created_at=_string(data, "created_at") or _string(data, "createdAt"),
+        updated_at=_string(data, "updated_at") or _string(data, "updatedAt"),
+        scopes=_strings(data.get("scopes")),
+        raw=data,
+        masked_api_key=_string(data, "masked_api_key"),
+        creator_user_id=_string(data, "creator_user_id"),
+        last_used_at=_string(data, "last_used_at"),
+        permissions=_object(data.get("permissions")),
+        key_permissions=_strings(data.get("key_permissions")),
+    )
+
+
+def parse_certificate_list(status_code: int, payload: Any) -> ListCertificatesResponse:
+    items = payload if isinstance(payload, list) else []
+    objects = tuple(_object(item) for item in items)
+    return ListCertificatesResponse(
+        status_code=status_code,
+        certificates=tuple(_parse_certificate_metadata(item) for item in objects),
+        raw=objects,
+    )
+
+
+def _parse_certificate_metadata(data: dict[str, Any]) -> CertificateMetadata:
+    version = data.get("version")
+    return CertificateMetadata(
+        certificate_id=_string(data, "id"),
+        name=_string(data, "name"),
+        version=version if isinstance(version, int) else None,
+        serial_number=_string(data, "serial_number"),
+        fingerprint=_string(data, "fingerprint"),
+        subject=_object(data.get("subject")),
+        issuer=_object(data.get("issuer")),
+        subject_alt_name=_object(data.get("subject_alt_name")),
+        valid_from=_string(data, "valid_from"),
+        valid_to=_string(data, "valid_to"),
+        created_at=_string(data, "created_at"),
+        updated_at=_string(data, "updated_at"),
+        source=_string(data, "source"),
+        acme_renew_error=_string(data, "acme_renew_error"),
+        active=_bool(data, "active"),
+        raw=data,
     )
 
 

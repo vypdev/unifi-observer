@@ -8,6 +8,10 @@ from ..domain.unifi_web_api_models import (
     DeleteApiKeyRequest,
     DeleteCertificateRequest,
     DeleteResourceResponse,
+    ListApiKeysRequest,
+    ListApiKeysResponse,
+    ListCertificatesRequest,
+    ListCertificatesResponse,
     LoginRequest,
     LoginResponse,
     LoginSuccessResponse,
@@ -50,6 +54,10 @@ class UniFiWebConsolePort(Protocol):
     async def delete_api_key(self, request: DeleteApiKeyRequest) -> DeleteResourceResponse: ...
 
     async def delete_certificate(self, request: DeleteCertificateRequest) -> DeleteResourceResponse: ...
+
+    async def list_api_keys(self, request: ListApiKeysRequest) -> ListApiKeysResponse: ...
+
+    async def list_certificates(self, request: ListCertificatesRequest) -> ListCertificatesResponse: ...
 
     async def aclose(self) -> None: ...
 

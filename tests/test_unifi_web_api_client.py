@@ -9,6 +9,8 @@ from unifi_observer.domain.unifi_web_api_models import (
     CreateApiKeyRequest,
     DeleteApiKeyRequest,
     DeleteCertificateRequest,
+    ListApiKeysRequest,
+    ListCertificatesRequest,
     LoginRequest,
     MfaChallengeResponse,
     TwoFactorRequest,
@@ -55,14 +57,45 @@ async def test_typed_web_api_client_exposes_login_mfa_upload_activation_and_key(
                     "X-Token-Expire-Time": "2099-01-01T00:00:00Z",
                 },
             )
-        if request.url.path == "/api/userCertificates":
+        if request.method == "POST" and request.url.path == "/api/userCertificates":
             return httpx.Response(200, json={"id": "certificate-1", "name": "unifi.local"})
-        if request.url.path.endswith("/status"):
+        if request.method == "PUT" and request.url.path.endswith("/status"):
             return httpx.Response(200, json={"active": True})
-        if request.url.path.endswith("/keys"):
+        if request.method == "GET" and request.url.path.endswith("/keys"):
+            return httpx.Response(
+                200,
+                json={
+                    "code": 1,
+                    "data": [
+                        {
+                            "id": "key-1",
+                            "name": "unifi-observer-ai-core",
+                            "masked_api_key": "abcd***wxyz",
+                            "permissions": {"network.management": ["admin"]},
+                        }
+                    ],
+                },
+            )
+        if request.method == "POST" and request.url.path.endswith("/keys"):
             return httpx.Response(
                 200,
                 json={"data": {"id": "key-1", "name": "unifi-observer", "full_api_key": "secret-key"}},
+            )
+        if request.method == "GET" and request.url.path == "/api/userCertificates":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": "certificate-1",
+                        "name": "unifi.local-ai-core",
+                        "version": 3,
+                        "fingerprint": "AA:BB",
+                        "subject": {"CN": "unifi.local"},
+                        "issuer": {"CN": "Local CA"},
+                        "subject_alt_name": {"DNS": ["unifi.local"]},
+                        "active": True,
+                    }
+                ],
             )
         if request.method == "DELETE" and request.url.path == "/proxy/users/api/v2/keys/key-1":
             return httpx.Response(200, json={"code": 1, "codeS": "SUCCESS", "data": "success"})
@@ -91,6 +124,12 @@ async def test_typed_web_api_client_exposes_login_mfa_upload_activation_and_key(
     created = await client.create_api_key(CreateApiKeyRequest("user-1", "unifi-observer", "integration"))
     assert created.key.key_id == "key-1"
     assert created.key.full_api_key == "secret-key"
+    listed_keys = await client.list_api_keys(ListApiKeysRequest("user-1"))
+    assert listed_keys.keys[0].name == "unifi-observer-ai-core"
+    assert listed_keys.keys[0].masked_api_key == "abcd***wxyz"
+    listed_certificates = await client.list_certificates(ListCertificatesRequest())
+    assert listed_certificates.certificates[0].active is True
+    assert listed_certificates.certificates[0].name == "unifi.local-ai-core"
     assert (await client.delete_api_key(DeleteApiKeyRequest("key-1"))).deleted is True
     assert (await client.delete_certificate(DeleteCertificateRequest("certificate-1"))).deleted is True
     assert calls == [
@@ -99,6 +138,8 @@ async def test_typed_web_api_client_exposes_login_mfa_upload_activation_and_key(
         "/api/userCertificates",
         "/api/userCertificates/certificate-1/status",
         "/proxy/users/api/v2/user/user-1/keys",
+        "/proxy/users/api/v2/user/user-1/keys",
+        "/api/userCertificates",
         "/proxy/users/api/v2/keys/key-1",
         "/api/userCertificates/certificate-1",
     ]
