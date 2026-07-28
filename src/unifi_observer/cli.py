@@ -404,6 +404,7 @@ def _configure(config_path: Path) -> int:
             print(f"official_api_response: HTTP {exc.status_code}")
         else:
             print("official_api_response: connection_error")
+        print(f"official_api_error: {exc}")
         if exc.status_code in {401, 403}:
             raise CliError(
                 "UniFi official API rejected the API key (HTTP "
