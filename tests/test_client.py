@@ -34,6 +34,34 @@ def test_invalid_mode_is_rejected():
         make_settings(api_mode="unsupported")
 
 
+def test_custom_ca_certificate_must_exist(tmp_path):
+    with pytest.raises(ValueError, match="UNIFI_CA_CERT_PATH"):
+        make_settings(ca_cert_path=str(tmp_path / "missing-ca.crt"))
+
+
+def test_custom_ca_certificate_is_accepted(tmp_path):
+    ca_path = tmp_path / "ca.crt"
+    ca_path.write_text("test CA", encoding="utf-8")
+    assert make_settings(ca_cert_path=str(ca_path)).ca_cert_path == str(ca_path)
+
+
+def test_client_passes_custom_ca_to_httpx(tmp_path, monkeypatch):
+    ca_path = tmp_path / "ca.crt"
+    ca_path.write_text("test CA", encoding="utf-8")
+    captured = {}
+
+    class FakeAsyncClient:
+        is_closed = False
+
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    UniFiClient(make_settings(ca_cert_path=str(ca_path)))
+
+    assert captured["verify"] == str(ca_path)
+
+
 @pytest.mark.asyncio
 async def test_get_json_uses_x_api_key_and_returns_payload():
     seen = {}

@@ -98,7 +98,7 @@ class UniFiClient(UniFiGateway):
                 base_url=self.settings.api_base_url,
                 headers=self._headers,
                 timeout=self.settings.timeout_seconds,
-                verify=self.settings.verify_tls,
+                verify=self.settings.ca_cert_path or self.settings.verify_tls,
                 transport=self._transport,
             )
         return self._http

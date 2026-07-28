@@ -10,6 +10,7 @@ import os
 import shlex
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -96,6 +97,7 @@ def _settings_from_values(values: dict[str, str]) -> Settings:
         site_id=values.get("UNIFI_SITE_ID") or None,
         allowed_site_ids=tuple(x for x in values.get("UNIFI_ALLOWED_SITE_IDS", "").split(",") if x),
         verify_tls=values.get("UNIFI_VERIFY_TLS", "true").lower() not in {"0", "false", "no"},
+        ca_cert_path=values.get("UNIFI_CA_CERT_PATH") or None,
         timeout_seconds=float(values.get("UNIFI_TIMEOUT_SECONDS", "15")),
         enable_write=values.get("UNIFI_ENABLE_WRITE", "false").lower() in {"1", "true", "yes"},
         host=values.get("MCP_HOST", "127.0.0.1"),
@@ -113,6 +115,7 @@ def _settings_to_values(settings: Settings) -> dict[str, str]:
         "UNIFI_SITE_ID": settings.site_id or "",
         "UNIFI_ALLOWED_SITE_IDS": ",".join(settings.allowed_site_ids),
         "UNIFI_VERIFY_TLS": str(settings.verify_tls).lower(),
+        "UNIFI_CA_CERT_PATH": settings.ca_cert_path or "",
         "UNIFI_TIMEOUT_SECONDS": str(settings.timeout_seconds),
         "UNIFI_ENABLE_WRITE": str(settings.enable_write).lower(),
         "MCP_HOST": settings.host,
@@ -190,7 +193,7 @@ def _select_site(sites: list[dict[str, Any]]) -> str:
     return str(site_id)
 
 
-def _certificate_command(config_path: Path) -> int:
+def _generate_local_certificates(config_path: Path) -> tuple[Path, Path]:
     from scripts.generate_unifi_cert import CertificateRequest, generate_certificates
 
     _ensure_private_config_dir(config_path.parent)
@@ -206,8 +209,33 @@ def _certificate_command(config_path: Path) -> int:
     for path in files:
         print(f"  - {path}")
     print(f"Install {output_dir / 'unifi-local-ca.crt'} in the MCP host trust store.")
-    print(f"Upload {output_dir / f'{domain}.fullchain.crt'} and {output_dir / f'{domain}.key'} to UniFi.")
+    print(f"Llévate este .crt para subirlo a UniFi: {output_dir / f'{domain}.fullchain.crt'}")
+    print(f"Upload the matching private key only through the UniFi Console: {output_dir / f'{domain}.key'}")
+    return output_dir / f"{domain}.fullchain.crt", output_dir / "unifi-local-ca.crt"
+
+
+def _certificate_command(config_path: Path) -> int:
+    _generate_local_certificates(config_path)
     return 0
+
+
+def _prepare_local_tls(settings: Settings, config_path: Path) -> Settings:
+    verify = _prompt("Verify TLS connection on local mode? (recommended)", "yes")
+    if verify.lower() not in {"y", "yes"}:
+        print("TLS verification disabled for local mode. Use only on a trusted network.")
+        return replace(settings, verify_tls=False, ca_cert_path=None)
+
+    settings = replace(settings, verify_tls=True)
+    generate = _prompt("Generate certificates for local verification with Unifi?", "yes")
+    if generate.lower() in {"y", "yes"}:
+        server_cert, ca_cert = _generate_local_certificates(config_path)
+        print(f"Take this certificate to upload to UniFi Console: {server_cert}")
+        print(f"Trust this CA certificate on the Observer host: {ca_cert}")
+        _prompt("Upload this certificate to UniFi Console, press Enter when done to verify the connection")
+        return replace(settings, ca_cert_path=str(ca_cert))
+
+    _prompt("Upload or trust the existing certificate on UniFi Console, press Enter when done to verify the connection")
+    return settings
 
 
 def _unit_path() -> Path:
@@ -240,18 +268,30 @@ def _service_command(action: str) -> int:
 def _configure(config_path: Path) -> int:
     settings = _prompt_settings()
     if settings.api_mode == "local":
-        _certificate_command(config_path)
-        print("Complete the UniFi certificate upload and CA trust steps before continuing.")
-        if _prompt("Continue with site discovery", "no").lower() not in {"y", "yes"}:
-            return 0
-    sites = _discover_sites(settings)
+        settings = _prepare_local_tls(settings, config_path)
+    try:
+        sites = _discover_sites(settings)
+    except RuntimeError as exc:
+        if settings.api_mode == "local" and settings.verify_tls:
+            raise CliError(
+                "TLS connection verification failed. Confirm that the UniFi Console "
+                "has the generated certificate and that the CA path is trusted."
+            ) from exc
+        raise
     site_id = _select_site(sites)
-    settings = Settings(**{**settings.__dict__, "site_id": site_id, "allowed_site_ids": (site_id,)})
+    settings = replace(settings, site_id=site_id, allowed_site_ids=(site_id,))
     write_env_file(config_path, _settings_to_values(settings))
     unit = _write_unit(config_path)
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
     print(f"Configuration written to {config_path}")
     print(f"Service unit written to {unit}")
+    if settings.api_mode == "local" and settings.ca_cert_path:
+        certificate_dir = Path(settings.ca_cert_path).expanduser().parent
+        certificates = sorted(certificate_dir.glob("*.fullchain.crt"))
+        if certificates:
+            print(f"Llévate este .crt para subirlo a UniFi: {certificates[0]}")
+    if settings.api_mode == "local" and settings.verify_tls:
+        print("TLS connection verified successfully.")
     print("Run 'unifi-observer start' when ready.")
     return 0
 

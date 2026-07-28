@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 MODE_ALIASES = {
     "site-manager": "site-manager",
@@ -20,6 +21,7 @@ class Settings:
     verify_tls: bool
     timeout_seconds: float
     enable_write: bool
+    ca_cert_path: str | None = None
     host: str = "0.0.0.0"
     port: int = 8000
 
@@ -29,6 +31,8 @@ class Settings:
         except KeyError as exc:
             raise ValueError("UNIFI_API_MODE must be site-manager or local") from exc
         object.__setattr__(self, "api_mode", canonical_mode)
+        if self.ca_cert_path and not Path(self.ca_cert_path).expanduser().is_file():
+            raise ValueError("UNIFI_CA_CERT_PATH must point to an existing certificate file")
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -42,6 +46,7 @@ class Settings:
             verify_tls=os.getenv("UNIFI_VERIFY_TLS", "true").lower() not in {"0", "false", "no"},
             timeout_seconds=float(os.getenv("UNIFI_TIMEOUT_SECONDS", "15")),
             enable_write=os.getenv("UNIFI_ENABLE_WRITE", "false").lower() in {"1", "true", "yes"},
+            ca_cert_path=os.getenv("UNIFI_CA_CERT_PATH") or None,
             host=os.getenv("MCP_HOST", "0.0.0.0"),
             port=int(os.getenv("MCP_PORT", "8000")),
         )
@@ -53,5 +58,7 @@ class Settings:
             raise ValueError("UNIFI_API_BASE_URL must be an HTTP(S) URL")
         if self.timeout_seconds <= 0:
             raise ValueError("UNIFI_TIMEOUT_SECONDS must be positive")
+        if self.ca_cert_path and not Path(self.ca_cert_path).expanduser().is_file():
+            raise ValueError("UNIFI_CA_CERT_PATH must point to an existing certificate file")
         if self.port < 1 or self.port > 65535:
             raise ValueError("MCP_PORT must be a valid TCP port")

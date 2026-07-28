@@ -48,6 +48,13 @@ The `unifi-observer` CLI is a separate outer adapter. It owns interactive input,
 private configuration persistence, certificate preparation, and native `systemd --user`
 lifecycle operations; it does not move deployment concerns into the application layer.
 
+The installer is also an outer adapter boundary:
+
+- `install.sh` performs HTTPS repository bootstrap into a temporary checkout;
+- `scripts/setup.sh` creates the user-owned virtual environment and CLI link;
+- setup launches `unifi-observer configure` only after the package is installed;
+- credentials are collected by the CLI, never by shell arguments or installer flags.
+
 The MCP adapter receives use cases through dependency injection. It must not construct
 HTTP clients or read environment variables during module import. This keeps use cases
 unit-testable and allows future CLI, HTTP, or OpenClaw adapters without changing the
@@ -83,7 +90,13 @@ Coolify should provide:
 
 Native deployment provides the same application through `unifi-observer.service`:
 
+- the one-line installer installs into `~/.local/share/unifi-observer` and links
+  `~/.local/bin/unifi-observer`;
 - `unifi-observer configure` prepares private configuration and the user unit;
+- local configuration can generate a CA/server certificate pair and pauses for the
+  UniFi Console upload before TLS-verified site discovery;
+- `UNIFI_CA_CERT_PATH` lets the HTTP adapter trust the generated CA without disabling
+  TLS verification or changing the system trust store;
 - `unifi-observer start|stop|restart|status` delegates lifecycle operations to
   `systemctl --user`;
 - `unifi-observer uninstall` removes the unit and configuration but preserves generated

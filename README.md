@@ -60,6 +60,27 @@ should inject the variables through its environment/secret configuration.
 
 The product CLI and native service are named `unifi-observer`.
 
+### One-line installation
+
+On a Linux host with `systemd --user`, the supported bootstrap command is:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/vypdev/unifi-observer/master/install.sh)"
+```
+
+The installer downloads the selected repository revision over HTTPS, creates an
+isolated user-owned virtual environment under `~/.local/share/unifi-observer`,
+links the CLI at `~/.local/bin/unifi-observer`, and immediately starts the
+interactive configuration wizard. It never accepts credentials as arguments.
+
+Review `install.sh` before piping it to Bash in production. For an installation
+without starting the wizard (for testing or image preparation only):
+
+```bash
+UNIFI_OBSERVER_SKIP_CONFIGURE=1 \
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/vypdev/unifi-observer/master/install.sh)"
+```
+
 ```bash
 unifi-observer get-site
 unifi-observer generate-certificate
@@ -72,11 +93,30 @@ unifi-observer uninstall
 ```
 
 Commands prompt for required values rather than accepting credentials as command-line
-arguments. `configure` interactively selects the API mode, prepares local TLS material
-when needed, discovers the visible site ID, writes a private configuration file under
-`~/.config/unifi-observer/`, and prepares a `systemd --user` service. It does not start
-the service automatically; run `unifi-observer start` after completing any UniFi
-certificate upload and CA trust steps.
+arguments. `configure` interactively selects the API mode, prepares local TLS material when
+requested, discovers the visible site ID, writes a private configuration file under
+`~/.config/unifi-observer/`, and prepares a `systemd --user` service. In local mode it
+asks:
+
+```text
+Verify TLS connection on local mode? (recommended)
+Generate certificates for local verification with Unifi?
+```
+
+When certificates are generated, the wizard prints the exact server `.crt` path and
+the CA path. The server certificate/full chain and matching key are uploaded through
+the UniFi Console; the CA remains protected on the Observer host. The wizard then
+waits for:
+
+```text
+Upload this certificate to UniFi Console, press Enter when done to verify the connection
+```
+
+Only after a real TLS-verified site discovery succeeds does it persist the final
+configuration and prepare the service. The generated setting `UNIFI_CA_CERT_PATH`
+keeps verification enabled without requiring a system-wide trust-store modification.
+The service is not started automatically; run `unifi-observer start` after reviewing
+the generated unit.
 
 The native service and Coolify deployment use the same MCP application and environment
 contract. Coolify remains the recommended container deployment path; the native CLI is
