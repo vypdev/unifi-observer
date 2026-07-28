@@ -19,7 +19,7 @@ def create_mcp_app(
 ) -> FastMCP:
     """Create the MCP/HTTP presentation adapter from injected application services."""
     app = FastMCP(
-        "unifi-mcp-coolify",
+        "unifi-observer",
         instructions="Read-only UniFi network inventory and health. Write operations are disabled by default.",
         host=settings.host,
         port=settings.port,
@@ -30,7 +30,7 @@ def create_mcp_app(
 
     @app.custom_route("/healthz", methods=["GET"])
     async def healthz(_: Request) -> JSONResponse:
-        return JSONResponse({"status": "ok", "service": "unifi-mcp-coolify", "version": "0.1.0"})
+        return JSONResponse({"status": "ok", "service": "unifi-observer", "version": "0.1.0"})
 
     @app.custom_route("/readyz", methods=["GET"])
     async def readyz(_: Request) -> JSONResponse:

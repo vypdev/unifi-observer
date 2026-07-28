@@ -18,7 +18,7 @@ class UniFiClient(UniFiGateway):
     def __init__(self, settings: Settings, transport: httpx.AsyncBaseTransport | None = None):
         settings.validate()
         self.settings = settings
-        headers = {"Accept": "application/json", "User-Agent": "unifi-mcp-coolify/0.1"}
+        headers = {"Accept": "application/json", "User-Agent": "unifi-observer/0.1"}
         if settings.api_key:
             headers["X-API-Key"] = settings.api_key
         self._headers = headers

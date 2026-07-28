@@ -8,7 +8,7 @@ Hermes ───────┐
 OpenClaw ─────┤──────────────┐
               │              │
               ▼              ▼
-        unifi-mcp-coolify  /healthz /readyz
+        unifi-observer  /healthz /readyz
               │
               ▼
       UniFi Site Manager API
@@ -44,6 +44,10 @@ infrastructure ──────┘
 - `presentation`: MCP tools and HTTP health/readiness routes;
 - `composition`: production dependency wiring and process entry point.
 
+The `unifi-observer` CLI is a separate outer adapter. It owns interactive input,
+private configuration persistence, certificate preparation, and native `systemd --user`
+lifecycle operations; it does not move deployment concerns into the application layer.
+
 The MCP adapter receives use cases through dependency injection. It must not construct
 HTTP clients or read environment variables during module import. This keeps use cases
 unit-testable and allows future CLI, HTTP, or OpenClaw adapters without changing the
@@ -76,3 +80,11 @@ Coolify should provide:
 - private networking to the UniFi controller when using local API mode;
 - health checks against `/healthz`;
 - no public database or auxiliary service.
+
+Native deployment provides the same application through `unifi-observer.service`:
+
+- `unifi-observer configure` prepares private configuration and the user unit;
+- `unifi-observer start|stop|restart|status` delegates lifecycle operations to
+  `systemctl --user`;
+- `unifi-observer uninstall` removes the unit and configuration but preserves generated
+  certificate material for deliberate cleanup.

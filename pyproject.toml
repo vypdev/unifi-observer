@@ -3,9 +3,9 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "unifi-mcp-coolify"
+name = "unifi-observer"
 version = "0.1.0"
-description = "Read-only-first UniFi MCP server for Coolify, Hermes, and OpenClaw"
+description = "Read-only-first UniFi Observer service for Coolify, Hermes, and OpenClaw"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -25,10 +25,11 @@ dev = [
 ]
 
 [project.scripts]
+unifi-observer = "unifi_mcp.cli:main"
 unifi-mcp = "unifi_mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/unifi_mcp"]
+packages = ["src/unifi_mcp", "scripts"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

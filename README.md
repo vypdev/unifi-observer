@@ -1,6 +1,6 @@
-# UniFi MCP Coolify
+# UniFi Observer
 
-Read-only-first Model Context Protocol (MCP) server for UniFi Site Manager or a local UniFi console.
+Read-only-first UniFi Observer service with a Model Context Protocol (MCP) adapter for UniFi Site Manager or a local UniFi console.
 
 The service is designed for deployment in Coolify and consumption by Hermes and OpenClaw through **Streamable HTTP**. It does not expose write tools in the initial release. Network modifications remain disabled by default and will require a separate, explicitly reviewed capability.
 
@@ -55,6 +55,34 @@ UNIFI_API_BASE_URL=https://api.ui.com \
 The application reads configuration from the process environment; it does not load
 `.env` files itself. The `set -a` step above is for local development only. Coolify
 should inject the variables through its environment/secret configuration.
+
+## Native interactive CLI
+
+The product CLI is `unifi-observer`. The repository name remains
+`unifi-mcp-coolify` for now, and `unifi-mcp` remains available as a compatibility
+entry point for the MCP server.
+
+```bash
+unifi-observer get-site
+unifi-observer generate-certificate
+unifi-observer configure
+unifi-observer start
+unifi-observer stop
+unifi-observer restart
+unifi-observer status
+unifi-observer uninstall
+```
+
+Commands prompt for required values rather than accepting credentials as command-line
+arguments. `configure` interactively selects the API mode, prepares local TLS material
+when needed, discovers the visible site ID, writes a private configuration file under
+`~/.config/unifi-observer/`, and prepares a `systemd --user` service. It does not start
+the service automatically; run `unifi-observer start` after completing any UniFi
+certificate upload and CA trust steps.
+
+The native service and Coolify deployment use the same MCP application and environment
+contract. Coolify remains the recommended container deployment path; the native CLI is
+an alternative for hosts where systemd user services are preferred.
 
 ## Local UniFi TLS certificate helper
 
