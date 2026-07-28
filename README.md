@@ -127,6 +127,11 @@ never printed. The permissions returned by current UniFi OS versions may be broa
 the Observer's read-only behavior; use a dedicated local UniFi account where possible and
 review/revoke the generated key from the console when no longer needed.
 
+The internal web-console integration is documented in
+[`docs/unifi-web-console-api.md`](docs/unifi-web-console-api.md). It records observed
+request/response contracts without retaining session cookies, CSRF tokens, API keys, or
+private keys, and includes the capture template for future web calls.
+
 It uses disabled certificate verification only for this local bootstrap session because the
 factory UniFi certificate is not valid for the local hostname/IP. After activation, the
 bootstrap session is closed and the normal client verifies the connection with the generated
