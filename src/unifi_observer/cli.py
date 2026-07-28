@@ -188,11 +188,18 @@ def _discover_sites(settings: Settings) -> list[dict[str, Any]]:
     )
 
     async def operation():
-        client = UniFiClient(settings)
-        try:
-            return await client.list_sites()
-        finally:
-            await client.aclose()
+        for attempt in range(5):
+            client = UniFiClient(settings)
+            try:
+                return await client.list_sites()
+            except UniFiError as exc:
+                if not _looks_like_tls_failure(exc) or attempt == 4:
+                    raise
+                delay = 2**attempt
+                print(f"official_api_retry: TLS reload in progress; retrying in {delay}s")
+                await asyncio.sleep(delay)
+            finally:
+                await client.aclose()
 
     return _extract_sites(_run_async(operation()))
 
