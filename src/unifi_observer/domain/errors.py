@@ -12,3 +12,15 @@ class UniFiError(RuntimeError):
     def __init__(self, message: str, status_code: int | None = None):
         super().__init__(message)
         self.status_code = status_code
+
+
+class CertificateUploadError(UniFiError):
+    """Raised when the UniFi OS bootstrap workflow cannot complete."""
+
+
+class TwoFactorRequiredError(CertificateUploadError):
+    """Raised when UniFi requires a one-time authentication token."""
+
+    def __init__(self, message: str, status_code: int | None = None, *, sso: bool = False):
+        super().__init__(message, status_code)
+        self.sso = sso

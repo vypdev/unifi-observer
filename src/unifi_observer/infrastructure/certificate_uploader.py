@@ -8,19 +8,7 @@ from typing import Any
 
 import httpx
 
-from ..domain.errors import UniFiError
-
-
-class CertificateUploadError(UniFiError):
-    """Raised when the UniFi OS web certificate workflow cannot complete."""
-
-
-class TwoFactorRequiredError(CertificateUploadError):
-    """Raised when UniFi requires a one-time authentication token."""
-
-    def __init__(self, message: str, status_code: int | None = None, *, sso: bool = False):
-        super().__init__(message, status_code)
-        self.sso = sso
+from ..domain.errors import CertificateUploadError, TwoFactorRequiredError
 
 
 class UniFiCertificateUploader:

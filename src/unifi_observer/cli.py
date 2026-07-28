@@ -14,11 +14,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from .infrastructure.certificate_uploader import (
-    CertificateUploadError,
-    TwoFactorRequiredError,
-    UniFiCertificateUploader,
-)
+from .domain.errors import CertificateUploadError, TwoFactorRequiredError
+from .infrastructure.certificate_uploader import UniFiCertificateUploader
 from .infrastructure.config import Settings
 from .infrastructure.unifi_client import UniFiClient
 

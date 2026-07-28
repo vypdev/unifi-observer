@@ -18,6 +18,29 @@ class RuntimeInfo(Protocol):
     def site_id(self) -> str | None: ...
 
 
+class UniFiWebConsolePort(Protocol):
+    """Application port for the short-lived UniFi OS bootstrap session."""
+
+    async def authenticate(
+        self,
+        username: str,
+        password: str,
+        two_factor_token: str | None = None,
+    ) -> None: ...
+
+    async def upload_and_activate(
+        self,
+        *,
+        certificate_name: str,
+        certificate_pem: str,
+        private_key_pem: str,
+    ) -> None: ...
+
+    async def create_api_key(self, name: str, description: str) -> str: ...
+
+    async def aclose(self) -> None: ...
+
+
 class UniFiGateway(Protocol):
     async def list_sites(self) -> Any: ...
 

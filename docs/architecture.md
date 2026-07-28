@@ -45,12 +45,29 @@ infrastructure ──────┘
 - `presentation`: MCP tools and HTTP health/readiness routes;
 - `composition`: production dependency wiring and process entry point.
 
-The `unifi-observer` CLI is a separate outer adapter. It owns interactive input,
-private configuration persistence, certificate preparation, and native `systemd --user`
-lifecycle operations; it does not move deployment concerns into the application layer.
+The read-only data client and the bootstrap adapter are deliberately separate:
+
+```text
+MCP client ──/mcp──> unifi-observer ──> UniFi Network API
+                                      └─> official/read-only operations
+
+configure CLI ──> application bootstrap port
+                       └─> infrastructure UniFi OS web-console adapter
+                           └─> short-lived login/MFA/upload/API-key session
+```
+
+`unifi-observer` is not a public proxy for UniFi's administrator login API. It consumes
+selected internal web-console calls only during local bootstrap, keeps administrator
+credentials and session material in memory, closes the session, and then uses the official
+Network Integration API key for normal operation. The internal endpoint contract is
+firmware-dependent and must never be exposed as an unauthenticated or general-purpose
+remote API.
+
+The `UniFiWebConsolePort` defines the application boundary for this bootstrap workflow. The
+current CLI remains the composition point while the orchestration is migrated behind that
+port; the HTTP adapter itself does not cross into the domain or application layers.
 
 The installer is also an outer adapter boundary:
-
 - `install.sh` performs HTTPS repository bootstrap into a temporary checkout;
 - `scripts/setup.sh` creates the user-owned virtual environment and CLI link;
 - setup launches `unifi-observer configure` only after the package is installed;
