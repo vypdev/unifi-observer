@@ -108,9 +108,25 @@ Generate certificates for local verification with Unifi?
 ```
 
 When certificates are generated, the wizard prints the exact server `.crt` path and
-the CA path. The server certificate/full chain and matching key are uploaded through
-the UniFi Console; the CA remains protected on the Observer host. The wizard then
-waits for:
+the CA path. By default it offers automatic upload through the local UniFi OS web-console
+workflow. It asks interactively for the local UniFi administrator username and password.
+If UniFi returns `api.err.Ubic2faTokenRequired` (HTTP 499), it asks for the one-time 2FA
+token and resubmits the login. None of these credentials are stored in configuration or
+logs. The upload sequence creates and activates the certificate through:
+
+```text
+POST /api/auth/login
+POST /api/userCertificates
+PUT  /api/userCertificates/{id}/status
+```
+
+The upload adapter is deliberately isolated from the read-only Network Integration client.
+It uses disabled certificate verification only for this local bootstrap session because the
+factory UniFi certificate is not valid for the local hostname/IP. After activation, the
+bootstrap session is closed and the normal client verifies the connection with the generated
+CA and `UNIFI_VERIFY_TLS=true`. The web-console endpoints are internal/version-dependent;
+if the upload is rejected or unavailable, configuration stops without persisting settings
+and the wizard can fall back to the manual upload path:
 
 ```text
 Upload this certificate to UniFi Console, press Enter when done to verify the connection

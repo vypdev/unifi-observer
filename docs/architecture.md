@@ -40,7 +40,8 @@ infrastructure ──────┘
 
 - `domain`: application errors and policies with no transport or vendor dependencies;
 - `application`: read-only use cases and the `UniFiGateway` port;
-- `infrastructure`: environment configuration and the `httpx` UniFi adapter;
+- `infrastructure`: environment configuration, the read-only `httpx` UniFi adapter, and
+  the isolated UniFi OS web-console certificate bootstrap adapter;
 - `presentation`: MCP tools and HTTP health/readiness routes;
 - `composition`: production dependency wiring and process entry point.
 
@@ -93,8 +94,12 @@ Native deployment provides the same application through `unifi-observer.service`
 - the one-line installer installs into `~/.local/share/unifi-observer` and links
   `~/.local/bin/unifi-observer`;
 - `unifi-observer configure` prepares private configuration and the user unit;
-- local configuration can generate a CA/server certificate pair and pauses for the
-  UniFi Console upload before TLS-verified site discovery;
+- local configuration can generate a CA/server certificate pair and offers an automatic
+  UniFi OS web-console upload; username/password and an on-demand 2FA token remain
+  in-memory only;
+- the upload adapter uses the internal, firmware-dependent web-console endpoints only
+  for bootstrap and falls back to manual upload when unavailable;
+- after activation, the client performs TLS-verified site discovery before persistence;
 - `UNIFI_CA_CERT_PATH` lets the HTTP adapter trust the generated CA without disabling
   TLS verification or changing the system trust store;
 - `unifi-observer start|stop|restart|status` delegates lifecycle operations to

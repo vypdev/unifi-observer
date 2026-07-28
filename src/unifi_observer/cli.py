@@ -14,6 +14,11 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from .infrastructure.certificate_uploader import (
+    CertificateUploadError,
+    TwoFactorRequiredError,
+    UniFiCertificateUploader,
+)
 from .infrastructure.config import Settings
 from .infrastructure.unifi_client import UniFiClient
 
@@ -193,7 +198,7 @@ def _select_site(sites: list[dict[str, Any]]) -> str:
     return str(site_id)
 
 
-def _generate_local_certificates(config_path: Path) -> tuple[Path, Path]:
+def _generate_local_certificates(config_path: Path) -> tuple[Path, Path, Path]:
     from scripts.generate_unifi_cert import CertificateRequest, generate_certificates
 
     _ensure_private_config_dir(config_path.parent)
@@ -211,12 +216,50 @@ def _generate_local_certificates(config_path: Path) -> tuple[Path, Path]:
     print(f"Install {output_dir / 'unifi-local-ca.crt'} in the MCP host trust store.")
     print(f"Llévate este .crt para subirlo a UniFi: {output_dir / f'{domain}.fullchain.crt'}")
     print(f"Upload the matching private key only through the UniFi Console: {output_dir / f'{domain}.key'}")
-    return output_dir / f"{domain}.fullchain.crt", output_dir / "unifi-local-ca.crt"
+    return (
+        output_dir / f"{domain}.fullchain.crt",
+        output_dir / f"{domain}.key",
+        output_dir / "unifi-local-ca.crt",
+    )
 
 
 def _certificate_command(config_path: Path) -> int:
     _generate_local_certificates(config_path)
     return 0
+
+
+def _upload_local_certificate(
+    settings: Settings,
+    certificate_path: Path,
+    private_key_path: Path,
+) -> None:
+    username = _prompt("UniFi Console administrator username")
+    password = _prompt("UniFi Console administrator password", secret=True)
+    certificate_pem = certificate_path.read_text(encoding="utf-8")
+    private_key_pem = private_key_path.read_text(encoding="utf-8")
+
+    async def operation() -> None:
+        uploader = UniFiCertificateUploader(settings.api_base_url, settings.timeout_seconds)
+        try:
+            try:
+                await uploader.authenticate(username, password)
+            except TwoFactorRequiredError:
+                two_factor_token = _prompt("UniFi 2FA token", secret=True)
+                if not two_factor_token:
+                    raise CliError("a UniFi 2FA token is required for automatic certificate upload")
+                await uploader.authenticate(username, password, two_factor_token)
+            await uploader.upload_and_activate(
+                certificate_name=certificate_path.name.removesuffix(".fullchain.crt"),
+                certificate_pem=certificate_pem,
+                private_key_pem=private_key_pem,
+            )
+        except CertificateUploadError as exc:
+            raise CliError(f"automatic UniFi certificate upload failed: {exc}") from exc
+        finally:
+            await uploader.aclose()
+
+    _run_async(operation())
+    print("Certificate uploaded and activated on UniFi Console.")
 
 
 def _prepare_local_tls(settings: Settings, config_path: Path) -> Settings:
@@ -228,9 +271,19 @@ def _prepare_local_tls(settings: Settings, config_path: Path) -> Settings:
     settings = replace(settings, verify_tls=True)
     generate = _prompt("Generate certificates for local verification with Unifi?", "yes")
     if generate.lower() in {"y", "yes"}:
-        server_cert, ca_cert = _generate_local_certificates(config_path)
+        server_cert, private_key, ca_cert = _generate_local_certificates(config_path)
         print(f"Take this certificate to upload to UniFi Console: {server_cert}")
         print(f"Trust this CA certificate on the Observer host: {ca_cert}")
+        automatic_upload = _prompt("Upload certificate automatically to UniFi Console? (recommended)", "yes")
+        if automatic_upload.lower() in {"y", "yes"}:
+            try:
+                _upload_local_certificate(settings, server_cert, private_key)
+                return replace(settings, ca_cert_path=str(ca_cert))
+            except CliError as exc:
+                print(f"Automatic upload unavailable: {exc}")
+                manual_fallback = _prompt("Continue with manual certificate upload?", "yes")
+                if manual_fallback.lower() not in {"y", "yes"}:
+                    raise
         _prompt("Upload this certificate to UniFi Console, press Enter when done to verify the connection")
         return replace(settings, ca_cert_path=str(ca_cert))
 
