@@ -109,9 +109,12 @@ class UniFiCertificateUploader:
         password: str,
         two_factor_token: str | None = None,
     ) -> None:
-        payload = {"username": username, "password": password, "rememberMe": False}
-        if two_factor_token:
-            payload["token"] = two_factor_token
+        payload = {
+            "username": username,
+            "password": password,
+            "token": two_factor_token or "",
+            "rememberMe": False,
+        }
         try:
             response = await self._http.post(
                 "/api/auth/login",
@@ -144,6 +147,7 @@ class UniFiCertificateUploader:
         self._user_id = _user_id_from_token(token) if token else None
         if self._csrf_token is None:
             raise CertificateUploadError("UniFi Console login returned no CSRF token")
+        self._mfa_cookie = None
 
     async def _upload(
         self,

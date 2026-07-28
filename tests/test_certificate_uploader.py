@@ -29,6 +29,7 @@ async def test_upload_and_activate_uses_local_console_web_contract():
             assert json.loads(request.content) == {
                 "username": "admin",
                 "password": "password",
+                "token": "",
                 "rememberMe": False,
             }
             return httpx.Response(
@@ -149,7 +150,7 @@ async def test_authentication_resubmits_token_after_2fa_challenge():
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
         attempts.append(payload)
-        if "token" not in payload:
+        if not payload.get("token"):
             return httpx.Response(
                 499,
                 json={"meta": {"msg": "api.err.Ubic2faTokenRequired"}},
@@ -170,7 +171,12 @@ async def test_authentication_resubmits_token_after_2fa_challenge():
     await uploader.aclose()
 
     assert attempts == [
-        {"username": "admin", "password": "password", "rememberMe": False},
+        {
+            "username": "admin",
+            "password": "password",
+            "token": "",
+            "rememberMe": False,
+        },
         {
             "username": "admin",
             "password": "password",

@@ -240,7 +240,30 @@ The current adapter recognizes both this SSO marker and the older observed marke
 api.err.Ubic2faTokenRequired
 ```
 
-For `MFA_AUTH_REQUIRED`, the adapter stores the temporary MFA cookie only in memory and stops before attempting the legacy `token` retry. The second request is deliberately pending until its actual browser call is captured and documented. This avoids sending an incorrect payload or losing the MFA challenge context.
+For `MFA_AUTH_REQUIRED`, the adapter stores the temporary MFA cookie only in memory. The browser then repeats the same `/api/auth/login` request with the one-time token:
+
+```json
+{
+  "username": "<username>",
+  "password": "[REDACTED]",
+  "token": "<six-digit-mfa-code>",
+  "rememberMe": false
+}
+```
+
+The observed successful response was:
+
+```http
+HTTP 200 OK
+Set-Cookie: TOKEN=[REDACTED]; Path=/; ...
+X-Csrf-Token: <csrf-token>
+X-Updated-Csrf-Token: <csrf-token>
+X-Token-Expire-Time: <epoch-milliseconds>
+```
+
+The response body is a user profile object. The adapter needs only the authenticated identity and the session credentials; fields such as permissions, scopes, `deviceToken`, `ssoAuth`, email addresses, and account metadata must not be logged or persisted. The `TOKEN` cookie and CSRF response header are then used by the subsequent certificate and API-key calls.
+
+The current adapter now performs this retry on the same HTTP client, preserving the session cookies received during the first request. It sends the observed empty `token` field on the first request and the supplied one-time code on the second request. It does not add the `mfaCookie` to the second request because it was not present in the captured browser `Cookie` header; the value is still retained only as temporary challenge context and cleared after successful authentication or session close.
 
 ### Security and lifecycle
 
