@@ -105,8 +105,7 @@ application layer.
 - `site-manager`: official cloud API, normally `https://api.ui.com` and `X-API-Key`.
 - `local`: local UniFi Network API, with a configurable console URL and site ID.
 
-The legacy value `network-integration` is accepted as a compatibility alias and is
-normalized to `local` at configuration boundaries.
+The configuration uses `site-manager` for the cloud API and `local` for the local UniFi Network API.
 
 The upstream contract must be checked against the installed UniFi version before production deployment. The client deliberately returns bounded errors instead of dumping upstream response bodies into model context.
 
@@ -116,7 +115,7 @@ unsupported-operation error instead of probing undocumented endpoints.
 
 ## Transport decision
 
-The previous server exposed legacy `/sse` and returned an endpoint event, but did not deliver the JSON-RPC response after `initialize`. This implementation uses MCP Streamable HTTP at `/mcp` with `stateless_http=true` and JSON responses. Contract tests cover tool registration and invocation through the presentation adapter; the release smoke-test procedure covers HTTP initialization and repeated calls.
+The server uses MCP Streamable HTTP at `/mcp` with `stateless_http=true` and JSON responses. Contract tests cover tool registration and invocation through the presentation adapter; the release smoke-test procedure covers HTTP initialization and repeated calls.
 
 ## Deployment boundary
 
@@ -140,7 +139,8 @@ Native deployment provides the same application through `unifi-observer.service`
   for bootstrap and falls back to manual upload when unavailable;
 - the same session can create a Network Integration API key; current consoles may return
   broad account permissions, so the generated key must not be described as read-only;
-- after activation, the client performs TLS-verified site discovery before persistence;
+- after activation, the client waits briefly for the console HTTPS service to reload when
+  necessary, then performs TLS-verified site discovery before persistence;
 - `UNIFI_CA_CERT_PATH` lets the HTTP adapter trust the generated CA without disabling
   TLS verification or changing the system trust store;
 - `unifi-observer start|stop|restart|status` delegates lifecycle operations to

@@ -173,19 +173,18 @@ def _extract_sites(payload: Any) -> list[dict[str, Any]]:
 
 def _discover_sites(settings: Settings) -> list[dict[str, Any]]:
     tls_ca = settings.ca_cert_path or ("system trust store" if settings.verify_tls else "verification disabled")
-    print(f"official_api_tls: verify={settings.verify_tls}; ca={tls_ca}")
     if settings.api_mode == "local":
         api_kind = "local Network Integration"
         endpoint = "/proxy/network/integration/v1/sites"
     else:
         api_kind = "cloud Site Manager"
         endpoint = "/v1/sites"
-    print(
-        f"official_api_request: {api_kind}; "
-        f"base_url={settings.api_base_url}; endpoint={endpoint}; "
-        "X-API-Key "
-        + ("present" if settings.api_key else "absent")
-    )
+    print("Verifying UniFi API connection:")
+    print(f"  mode: {api_kind}")
+    print(f"  base URL: {settings.api_base_url}")
+    print(f"  endpoint: {endpoint}")
+    print(f"  TLS: {'enabled' if settings.verify_tls else 'disabled'} ({tls_ca})")
+    print(f"  API key: {'present' if settings.api_key else 'absent'}")
 
     async def operation():
         for attempt in range(5):
@@ -196,7 +195,7 @@ def _discover_sites(settings: Settings) -> list[dict[str, Any]]:
                 if not _looks_like_tls_failure(exc) or attempt == 4:
                     raise
                 delay = 2**attempt
-                print(f"official_api_retry: TLS reload in progress; retrying in {delay}s")
+                print(f"  TLS reload in progress; retrying in {delay}s")
                 await asyncio.sleep(delay)
             finally:
                 await client.aclose()
@@ -270,9 +269,7 @@ def _generate_local_certificates(config_path: Path) -> tuple[Path, Path, Path]:
     print("Certificate files ready:")
     for path in files:
         print(f"  - {path}")
-    print(f"Install {output_dir / 'unifi-local-ca.crt'} in the MCP host trust store.")
-    print(f"Llévate este .crt para subirlo a UniFi: {output_dir / f'{domain}.fullchain.crt'}")
-    print(f"Upload the matching private key only through the UniFi Console: {output_dir / f'{domain}.key'}")
+    print(f"Certificate material directory: {output_dir}")
     return (
         output_dir / f"{domain}.fullchain.crt",
         output_dir / f"{domain}.key",
@@ -335,8 +332,6 @@ def _prepare_local_tls(settings: Settings, config_path: Path) -> Settings:
     generate = _prompt("Generate certificates for local verification with Unifi?", "yes")
     if generate.lower() in {"y", "yes"}:
         server_cert, private_key, ca_cert = _generate_local_certificates(config_path)
-        print(f"Take this certificate to upload to UniFi Console: {server_cert}")
-        print(f"Trust this CA certificate on the Observer host: {ca_cert}")
         automatic_upload = _prompt("Upload certificate automatically to UniFi Console? (recommended)", "yes")
         if automatic_upload.lower() in {"y", "yes"}:
             try:
@@ -351,7 +346,10 @@ def _prepare_local_tls(settings: Settings, config_path: Path) -> Settings:
                 manual_fallback = _prompt("Continue with manual certificate upload?", "yes")
                 if manual_fallback.lower() not in {"y", "yes"}:
                     raise
-        _prompt("Upload this certificate to UniFi Console, press Enter when done to verify the connection")
+        print(f"  server certificate: {server_cert}")
+        print(f"  private key: {private_key}")
+        print(f"  CA certificate for Observer: {ca_cert}")
+        _prompt("Upload the certificate and key to UniFi Console, then press Enter to verify the connection")
         if not settings.api_key:
             settings = replace(settings, api_key=_prompt("UniFi Network Integration API key", secret=True) or None)
         return replace(settings, ca_cert_path=str(ca_cert))
@@ -442,11 +440,7 @@ def _configure(config_path: Path) -> int:
     print(f"Service unit written to {unit}")
     if settings.api_mode == "local" and settings.api_key:
         print(f"UniFi API key configured: [REDACTED]...{settings.api_key[-4:]}")
-    if settings.api_mode == "local" and settings.ca_cert_path:
-        certificate_dir = Path(settings.ca_cert_path).expanduser().parent
-        certificates = sorted(certificate_dir.glob("*.fullchain.crt"))
-        if certificates:
-            print(f"Llévate este .crt para subirlo a UniFi: {certificates[0]}")
+
     if settings.api_mode == "local" and settings.verify_tls:
         print("TLS connection verified successfully.")
     print("Run 'unifi-observer start' when ready.")

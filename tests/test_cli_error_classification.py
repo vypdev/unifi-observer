@@ -34,10 +34,40 @@ def test_discover_sites_reports_header_presence_without_secret(monkeypatch, caps
     monkeypatch.setattr("unifi_observer.cli.UniFiClient", FakeClient)
     _discover_sites(_local_settings_with_key())
     output = capsys.readouterr().out
-    assert "official_api_request: local Network Integration" in output
-    assert "base_url=https://unifi.local" in output
-    assert "endpoint=/proxy/network/integration/v1/sites" in output
+    assert "mode: local Network Integration" in output
+    assert "base URL: https://unifi.local" in output
+    assert "endpoint: /proxy/network/integration/v1/sites" in output
     assert "secret-value" not in output
+
+
+def test_discover_sites_retries_transient_tls_reload(monkeypatch, capsys):
+    from unifi_observer.cli import _discover_sites
+
+    attempts = 0
+
+    class FakeClient:
+        def __init__(self, settings):
+            pass
+
+        async def list_sites(self):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise UniFiError("certificate verify failed: self-signed certificate")
+            return {"data": [{"siteId": "site-1"}]}
+
+        async def aclose(self):
+            pass
+
+    async def no_sleep(_: int):
+        pass
+
+    monkeypatch.setattr("unifi_observer.cli.UniFiClient", FakeClient)
+    monkeypatch.setattr("unifi_observer.cli.asyncio.sleep", no_sleep)
+
+    assert _discover_sites(_local_settings_with_key()) == [{"siteId": "site-1"}]
+    assert attempts == 2
+    assert "TLS reload in progress; retrying in 1s" in capsys.readouterr().out
 
 
 def _local_settings_with_key() -> Settings:

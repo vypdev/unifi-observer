@@ -274,7 +274,7 @@ X-Token-Expire-Time: <epoch-milliseconds>
 
 The response body is a user profile object. The adapter needs only the authenticated identity and the session credentials; fields such as permissions, scopes, `deviceToken`, `ssoAuth`, email addresses, and account metadata must not be logged or persisted. The `TOKEN` cookie and CSRF response header are then used by the subsequent certificate and API-key calls.
 
-The current adapter now performs this retry on the same HTTP client, preserving the session cookies received during the first request. It sends the observed empty `token` field on the first request and the supplied one-time code on the second request. It does not add the `mfaCookie` to the second request because it was not present in the captured browser `Cookie` header; the value is still retained only as temporary challenge context and cleared after successful authentication or session close.
+The adapter performs this retry on the same HTTP client, preserving the session cookies received during the first request. It sends the observed empty `token` field on the first request and the supplied one-time code on the second request. It does not add the `mfaCookie` to the second request because it was not present in the captured browser `Cookie` header; the value is still retained only as temporary challenge context and cleared after successful authentication or session close.
 
 ### Security and lifecycle
 

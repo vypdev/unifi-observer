@@ -34,9 +34,6 @@ UNIFI_SITE_ID=<site-id>
 
 The exact API paths are kept in the client and can be tested without exposing the key. Consult the API documentation for the installed UniFi version before enabling production use.
 
-`network-integration` remains accepted as a backward-compatible alias for `local`,
-but new deployments should use `local`.
-
 `site-manager` currently provides sites, devices, and site details derived from the
 sites response. The `unifi_list_clients` and `unifi_get_health` tools require `local`
 mode because those operations are not part of the current Site Manager API contract.
@@ -132,10 +129,12 @@ The internal web-console integration is documented in
 request/response contracts without retaining session cookies, CSRF tokens, API keys, or
 private keys, and includes the capture template for future web calls.
 
-It uses disabled certificate verification only for this local bootstrap session because the
+It uses disabled certificate verification only for the local bootstrap session because the
 factory UniFi certificate is not valid for the local hostname/IP. After activation, the
 bootstrap session is closed and the normal client verifies the connection with the generated
-CA and `UNIFI_VERIFY_TLS=true`. The web-console endpoints are internal/version-dependent;
+CA and `UNIFI_VERIFY_TLS=true`. The verification waits briefly when the console is reloading
+its HTTPS service after certificate activation. The web-console endpoints are
+internal/version-dependent;
 if the upload is rejected or unavailable, configuration stops without persisting settings
 and the wizard can fall back to the manual upload path:
 
@@ -144,8 +143,10 @@ Upload this certificate to UniFi Console, press Enter when done to verify the co
 ```
 
 Only after a real TLS-verified site discovery succeeds does it persist the final
-configuration and prepare the service. The generated setting `UNIFI_CA_CERT_PATH`
-keeps verification enabled without requiring a system-wide trust-store modification.
+configuration and prepare the service. The generated setting `UNIFI_CA_CERT_PATH` keeps
+verification enabled without requiring a system-wide trust-store modification. Installing the
+CA globally is optional and only needed if other applications on the host must trust the local
+console certificate.
 The service is not started automatically; run `unifi-observer start` after reviewing
 the generated unit.
 
@@ -176,8 +177,7 @@ passed, applies restrictive permissions to private keys, and prints the next dep
 steps without printing key material.
 
 When `unifi-observer configure` detects existing material under
-`~/.config/unifi-observer/certificates`, it does not fail with an opaque
-`output file already exists` error. It shows the files and offers:
+`~/.config/unifi-observer/certificates`, it shows the files and offers:
 
 - **reuse**: keeps every existing file and continues with the existing certificate/key upload;
 - **replace**: warns that the existing material will be overwritten and requires typing
@@ -187,7 +187,8 @@ When `unifi-observer configure` detects existing material under
 For a trusted local deployment:
 
 1. Upload `<domain>.fullchain.crt` and `<domain>.key` to the UniFi console.
-2. Install `unifi-local-ca.crt`—the CA, not the server certificate—in the trust store of the MCP host. On Debian/Ubuntu:
+2. Configure `UNIFI_CA_CERT_PATH` with `unifi-local-ca.crt`. Installing the CA in the system
+   trust store is optional; on Debian/Ubuntu, use:
    ```bash
    sudo cp unifi-local-ca.crt /usr/local/share/ca-certificates/unifi-local-ca.crt
    sudo update-ca-certificates
@@ -226,7 +227,7 @@ Hermes or OpenClaw.
 
 ## MCP client configuration
 
-Use the Streamable HTTP endpoint, not the legacy `/sse` endpoint:
+Use the Streamable HTTP endpoint at `/mcp`:
 
 ```text
 https://<coolify-host>/mcp
