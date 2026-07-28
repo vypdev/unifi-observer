@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .application.bootstrap import UniFiConsoleBootstrap
-from .domain.errors import CertificateUploadError
+from .domain.errors import CertificateUploadError, UniFiError
 from .infrastructure.config import Settings
 from .infrastructure.unifi_client import UniFiClient
 from .infrastructure.unifi_web_api_client import UniFiWebApiClient
@@ -365,12 +365,38 @@ def _service_command(action: str) -> int:
     return _systemctl(action)
 
 
+def _looks_like_tls_failure(error: UniFiError) -> bool:
+    message = str(error).lower()
+    return any(
+        marker in message
+        for marker in (
+            "certificate_verify_failed",
+            "certificate verify failed",
+            "hostname mismatch",
+            "ssl: certificate",
+        )
+    )
+
+
 def _configure(config_path: Path) -> int:
     settings = _prompt_settings()
     if settings.api_mode == "local":
         settings = _prepare_local_tls(settings, config_path)
     try:
         sites = _discover_sites(settings)
+    except UniFiError as exc:
+        if exc.status_code in {401, 403}:
+            raise CliError(
+                "UniFi official API rejected the API key (HTTP "
+                f"{exc.status_code}). Verify that the key is present, valid, and has access "
+                "to the selected console/site."
+            ) from exc
+        if _looks_like_tls_failure(exc):
+            raise CliError(
+                "TLS connection verification failed. Confirm that the UniFi Console "
+                "has the generated certificate and that the CA path is trusted."
+            ) from exc
+        raise CliError(f"UniFi official API request failed: {exc}") from exc
     except RuntimeError as exc:
         if settings.api_mode == "local" and settings.verify_tls:
             raise CliError(
