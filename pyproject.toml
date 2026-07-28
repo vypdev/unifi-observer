@@ -26,7 +26,6 @@ dev = [
 
 [project.scripts]
 unifi-observer = "unifi_mcp.cli:main"
-unifi-mcp = "unifi_mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/unifi_mcp", "scripts"]

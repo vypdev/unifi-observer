@@ -49,7 +49,7 @@ python3 -m venv .venv
 .venv/bin/pytest
 set -a; . ./.env; set +a
 UNIFI_API_BASE_URL=https://api.ui.com \
-  .venv/bin/unifi-mcp
+  .venv/bin/python -m unifi_mcp.server
 ```
 
 The application reads configuration from the process environment; it does not load
@@ -58,9 +58,7 @@ should inject the variables through its environment/secret configuration.
 
 ## Native interactive CLI
 
-The product CLI is `unifi-observer`. The repository name remains
-`unifi-mcp-coolify` for now, and `unifi-mcp` remains available as a compatibility
-entry point for the MCP server.
+The product CLI and native service are named `unifi-observer`.
 
 ```bash
 unifi-observer get-site

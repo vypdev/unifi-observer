@@ -1,5 +1,5 @@
 services:
-  unifi-mcp:
+  unifi-observer:
     build: .
     restart: unless-stopped
     environment:
