@@ -72,6 +72,10 @@ The installer downloads the selected repository revision over HTTPS, creates an
 isolated user-owned virtual environment under `~/.local/share/unifi-observer`,
 links the CLI at `~/.local/bin/unifi-observer`, and immediately starts the
 interactive configuration wizard. It never accepts credentials as arguments.
+If `python3` or the matching Python `venv` package is missing on Debian/Ubuntu,
+the installer uses `apt-get` (through `sudo` when needed) to install them. It
+requires Python 3.11 or newer; on other distributions it reports the missing
+runtime/package instead of modifying an unsupported package manager.
 
 Review `install.sh` before piping it to Bash in production. For an installation
 without starting the wizard (for testing or image preparation only):

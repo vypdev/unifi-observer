@@ -21,6 +21,9 @@ def test_installer_defaults_to_https_and_starts_configuration():
     assert "https://github.com/vypdev/unifi-observer.git" in installer
     assert '[[ "$REPOSITORY_URL" == https://* ]]' in installer
     assert 'exec "$cli_target" configure' in setup
+    assert "apt-get install" in setup
+    assert "python3-venv" in setup
+    assert "sudo is required to install missing system packages" in setup
     assert "UNIFI_API_KEY" not in installer
     assert "UNIFI_API_KEY" not in setup
 
