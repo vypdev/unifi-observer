@@ -141,7 +141,12 @@ def _prompt_settings() -> Settings:
         "UniFi API base URL",
         "https://api.ui.com" if mode == "site-manager" else "https://unifi.local",
     )
-    api_key = _prompt("UniFi API key", secret=True)
+    api_key_label = (
+        "UniFi API key (leave empty to generate automatically)"
+        if mode == "local"
+        else "UniFi API key"
+    )
+    api_key = _prompt(api_key_label, secret=True)
     host = _prompt("MCP bind host", "127.0.0.1")
     port = int(_prompt("MCP port", "8000"))
     verify_tls = _prompt("Verify TLS (true/false)", "true").lower() not in {"0", "false", "no"}
@@ -232,13 +237,13 @@ def _upload_local_certificate(
     settings: Settings,
     certificate_path: Path,
     private_key_path: Path,
-) -> None:
+) -> str | None:
     username = _prompt("UniFi Console administrator username")
     password = _prompt("UniFi Console administrator password", secret=True)
     certificate_pem = certificate_path.read_text(encoding="utf-8")
     private_key_pem = private_key_path.read_text(encoding="utf-8")
 
-    async def operation() -> None:
+    async def operation() -> str | None:
         uploader = UniFiCertificateUploader(settings.api_base_url, settings.timeout_seconds)
         try:
             try:
@@ -253,13 +258,22 @@ def _upload_local_certificate(
                 certificate_pem=certificate_pem,
                 private_key_pem=private_key_pem,
             )
+            if settings.api_key:
+                return None
+            return await uploader.create_api_key(
+                name="unifi-observer",
+                description="UniFi Observer local integration key",
+            )
         except CertificateUploadError as exc:
             raise CliError(f"automatic UniFi certificate upload failed: {exc}") from exc
         finally:
             await uploader.aclose()
 
-    _run_async(operation())
+    generated_api_key = _run_async(operation())
     print("Certificate uploaded and activated on UniFi Console.")
+    if generated_api_key:
+        print("UniFi API key generated and kept out of console output.")
+    return generated_api_key
 
 
 def _prepare_local_tls(settings: Settings, config_path: Path) -> Settings:
@@ -277,17 +291,25 @@ def _prepare_local_tls(settings: Settings, config_path: Path) -> Settings:
         automatic_upload = _prompt("Upload certificate automatically to UniFi Console? (recommended)", "yes")
         if automatic_upload.lower() in {"y", "yes"}:
             try:
-                _upload_local_certificate(settings, server_cert, private_key)
-                return replace(settings, ca_cert_path=str(ca_cert))
+                generated_api_key = _upload_local_certificate(settings, server_cert, private_key)
+                return replace(
+                    settings,
+                    ca_cert_path=str(ca_cert),
+                    api_key=generated_api_key or settings.api_key,
+                )
             except CliError as exc:
                 print(f"Automatic upload unavailable: {exc}")
                 manual_fallback = _prompt("Continue with manual certificate upload?", "yes")
                 if manual_fallback.lower() not in {"y", "yes"}:
                     raise
         _prompt("Upload this certificate to UniFi Console, press Enter when done to verify the connection")
+        if not settings.api_key:
+            settings = replace(settings, api_key=_prompt("UniFi Network Integration API key", secret=True) or None)
         return replace(settings, ca_cert_path=str(ca_cert))
 
     _prompt("Upload or trust the existing certificate on UniFi Console, press Enter when done to verify the connection")
+    if not settings.api_key:
+        settings = replace(settings, api_key=_prompt("UniFi Network Integration API key", secret=True) or None)
     return settings
 
 
@@ -338,6 +360,8 @@ def _configure(config_path: Path) -> int:
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
     print(f"Configuration written to {config_path}")
     print(f"Service unit written to {unit}")
+    if settings.api_mode == "local" and settings.api_key:
+        print(f"UniFi API key configured: [REDACTED]...{settings.api_key[-4:]}")
     if settings.api_mode == "local" and settings.ca_cert_path:
         certificate_dir = Path(settings.ca_cert_path).expanduser().parent
         certificates = sorted(certificate_dir.glob("*.fullchain.crt"))

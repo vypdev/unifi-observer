@@ -120,7 +120,13 @@ POST /api/userCertificates
 PUT  /api/userCertificates/{id}/status
 ```
 
-The upload adapter is deliberately isolated from the read-only Network Integration client.
+The same authenticated session can optionally create the local Network Integration API key
+through the web-console endpoint `/proxy/users/api/v2/user/{user_id}/keys`. The key is
+returned only once in `data.full_api_key`, stored in the private configuration file, and
+never printed. The permissions returned by current UniFi OS versions may be broader than
+the Observer's read-only behavior; use a dedicated local UniFi account where possible and
+review/revoke the generated key from the console when no longer needed.
+
 It uses disabled certificate verification only for this local bootstrap session because the
 factory UniFi certificate is not valid for the local hostname/IP. After activation, the
 bootstrap session is closed and the normal client verifies the connection with the generated

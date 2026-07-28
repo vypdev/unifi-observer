@@ -46,6 +46,7 @@ class UniFiCertificateUploader:
             transport=transport,
         )
         self._csrf_token: str | None = None
+        self._user_id: str | None = None
 
     async def aclose(self) -> None:
         await self._http.aclose()
@@ -67,6 +68,32 @@ class UniFiCertificateUploader:
             csrf_token,
         )
         await self._activate(certificate_id, csrf_token)
+
+    async def create_api_key(self, name: str, description: str) -> str:
+        if self._csrf_token is None or self._user_id is None:
+            raise CertificateUploadError("UniFi Console is not authenticated")
+        try:
+            response = await self._http.post(
+                f"/proxy/users/api/v2/user/{self._user_id}/keys",
+                headers={
+                    "Content-Type": "text/plain;charset=UTF-8",
+                    "X-Csrf-Token": self._csrf_token,
+                },
+                content=json.dumps({"name": name, "description": description}),
+            )
+        except httpx.HTTPError as exc:
+            raise CertificateUploadError("UniFi API key creation was unavailable") from exc
+        if response.status_code >= 400:
+            raise CertificateUploadError("UniFi API key creation was rejected", response.status_code)
+        try:
+            payload: Any = response.json()
+        except ValueError as exc:
+            raise CertificateUploadError("UniFi API key creation returned invalid JSON") from exc
+        data = payload.get("data") if isinstance(payload, dict) else None
+        api_key = data.get("full_api_key") if isinstance(data, dict) else None
+        if not isinstance(api_key, str) or not api_key:
+            raise CertificateUploadError("UniFi API key creation returned no key")
+        return api_key
 
     async def authenticate(
         self,
@@ -93,6 +120,7 @@ class UniFiCertificateUploader:
         csrf_header = response.headers.get("x-csrf-token")
         token = response.cookies.get("TOKEN") or self._http.cookies.get("TOKEN")
         self._csrf_token = csrf_header or (_csrf_from_token(token) if token else None)
+        self._user_id = _user_id_from_token(token) if token else None
         if self._csrf_token is None:
             raise CertificateUploadError("UniFi Console login returned no CSRF token")
 
@@ -146,6 +174,19 @@ def _csrf_from_token(token: str) -> str:
     if not isinstance(csrf_token, str) or not csrf_token:
         raise CertificateUploadError("UniFi Console TOKEN did not contain a CSRF token")
     return csrf_token
+
+
+def _user_id_from_token(token: str) -> str:
+    try:
+        encoded_payload = token.split(".")[1]
+        encoded_payload += "=" * (-len(encoded_payload) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(encoded_payload).decode("utf-8"))
+        user_id = payload.get("userId")
+    except (IndexError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CertificateUploadError("UniFi Console TOKEN did not contain a valid user ID") from exc
+    if not isinstance(user_id, str) or not user_id:
+        raise CertificateUploadError("UniFi Console TOKEN did not contain a user ID")
+    return user_id
 
 
 def _certificate_id(response: httpx.Response) -> str | None:

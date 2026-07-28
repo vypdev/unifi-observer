@@ -99,6 +99,8 @@ Native deployment provides the same application through `unifi-observer.service`
   in-memory only;
 - the upload adapter uses the internal, firmware-dependent web-console endpoints only
   for bootstrap and falls back to manual upload when unavailable;
+- the same session can create a Network Integration API key; current consoles may return
+  broad account permissions, so the generated key must not be described as read-only;
 - after activation, the client performs TLS-verified site discovery before persistence;
 - `UNIFI_CA_CERT_PATH` lets the HTTP adapter trust the generated CA without disabling
   TLS verification or changing the system trust store;

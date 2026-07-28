@@ -11,7 +11,9 @@ from unifi_observer.infrastructure.certificate_uploader import (
 
 
 def jwt_with_csrf(value: str) -> str:
-    payload = base64.urlsafe_b64encode(json.dumps({"csrfToken": value}).encode()).decode().rstrip("=")
+    payload = base64.urlsafe_b64encode(
+        json.dumps({"csrfToken": value, "userId": "user-1"}).encode()
+    ).decode().rstrip("=")
     return f"header.{payload}.signature"
 
 
@@ -45,6 +47,14 @@ async def test_upload_and_activate_uses_local_console_web_contract():
             assert request.headers["x-csrf-token"] == "csrf-test"
             assert json.loads(request.content) == {"active": True}
             return httpx.Response(200, json={"meta": {"rc": "ok"}})
+        if request.method == "POST" and request.url.path == "/proxy/users/api/v2/user/user-1/keys":
+            assert request.headers["content-type"] == "text/plain;charset=UTF-8"
+            assert request.headers["x-csrf-token"] == "csrf-test"
+            assert json.loads(request.content) == {
+                "name": "unifi-observer",
+                "description": "UniFi Observer local integration key",
+            }
+            return httpx.Response(200, json={"data": {"full_api_key": "generated-key"}})
         raise AssertionError(f"unexpected request: {request.method} {request.url}")
 
     uploader = UniFiCertificateUploader(
@@ -57,12 +67,14 @@ async def test_upload_and_activate_uses_local_console_web_contract():
         certificate_pem="CERTIFICATE",
         private_key_pem="PRIVATE-KEY",
     )
+    assert await uploader.create_api_key("unifi-observer", "UniFi Observer local integration key") == "generated-key"
     await uploader.aclose()
 
     assert [request.url.path for request in calls] == [
         "/api/auth/login",
         "/api/userCertificates",
         "/api/userCertificates/certificate-1/status",
+        "/proxy/users/api/v2/user/user-1/keys",
     ]
 
 
