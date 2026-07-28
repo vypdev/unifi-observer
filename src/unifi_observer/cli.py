@@ -172,6 +172,8 @@ def _extract_sites(payload: Any) -> list[dict[str, Any]]:
 
 
 def _discover_sites(settings: Settings) -> list[dict[str, Any]]:
+    tls_ca = settings.ca_cert_path or ("system trust store" if settings.verify_tls else "verification disabled")
+    print(f"official_api_tls: verify={settings.verify_tls}; ca={tls_ca}")
     if settings.api_mode == "local":
         api_kind = "local Network Integration"
         endpoint = "/proxy/network/integration/v1/sites"
