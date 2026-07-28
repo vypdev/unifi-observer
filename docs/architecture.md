@@ -64,8 +64,9 @@ firmware-dependent and must never be exposed as an unauthenticated or general-pu
 remote API.
 
 The `UniFiWebConsolePort` defines the application boundary for this bootstrap workflow. The
-current CLI remains the composition point while the orchestration is migrated behind that
-port; the HTTP adapter itself does not cross into the domain or application layers.
+`UniFiConsoleBootstrap` use case owns the sequence and receives the web-console adapter by
+injection. The CLI remains an outer composition adapter: it collects input and supplies the
+interactive MFA callback, but it does not call the individual web API operations directly.
 
 The installer is also an outer adapter boundary:
 - `install.sh` performs HTTPS repository bootstrap into a temporary checkout;

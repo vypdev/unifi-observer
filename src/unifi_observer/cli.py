@@ -14,7 +14,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from .domain.errors import CertificateUploadError, TwoFactorRequiredError
+from .application.bootstrap import UniFiConsoleBootstrap
+from .domain.errors import CertificateUploadError
 from .infrastructure.certificate_uploader import UniFiCertificateUploader
 from .infrastructure.config import Settings
 from .infrastructure.unifi_client import UniFiClient
@@ -272,26 +273,21 @@ def _upload_local_certificate(
     certificate_pem = certificate_path.read_text(encoding="utf-8")
     private_key_pem = private_key_path.read_text(encoding="utf-8")
 
+    async def request_two_factor() -> str:
+        return _prompt("UniFi 2FA token", secret=True)
+
     async def operation() -> str | None:
         uploader = UniFiCertificateUploader(settings.api_base_url, settings.timeout_seconds)
         try:
-            try:
-                await uploader.authenticate(username, password)
-            except TwoFactorRequiredError:
-                two_factor_token = _prompt("UniFi 2FA token", secret=True)
-                if not two_factor_token:
-                    raise CliError("a UniFi 2FA token is required for automatic certificate upload")
-                await uploader.authenticate(username, password, two_factor_token)
-            await uploader.upload_and_activate(
+            bootstrap = UniFiConsoleBootstrap(uploader)
+            return await bootstrap.run(
+                username=username,
+                password=password,
                 certificate_name=certificate_path.name.removesuffix(".fullchain.crt"),
                 certificate_pem=certificate_pem,
                 private_key_pem=private_key_pem,
-            )
-            if settings.api_key:
-                return None
-            return await uploader.create_api_key(
-                name="unifi-observer",
-                description="UniFi Observer local integration key",
+                request_two_factor=request_two_factor,
+                generate_api_key=not bool(settings.api_key),
             )
         except CertificateUploadError as exc:
             raise CliError(f"automatic UniFi certificate upload failed: {exc}") from exc
