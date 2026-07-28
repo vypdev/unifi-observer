@@ -1,31 +1,63 @@
 import pytest
 
 from unifi_observer.application.bootstrap import UniFiConsoleBootstrap
-from unifi_observer.domain.errors import TwoFactorRequiredError
+from unifi_observer.domain.unifi_web_api_models import (
+    ActivateCertificateResponse,
+    ApiKeyMetadata,
+    CreateApiKeyResponse,
+    LoginSuccessResponse,
+    MfaChallengeResponse,
+    SessionCredentials,
+    UniFiUserProfile,
+    UploadCertificateResponse,
+)
 
 
 class FakeWebConsole:
     def __init__(self):
         self.calls = []
+        self.success = LoginSuccessResponse(
+            200,
+            UniFiUserProfile("user-1", None, "admin", None, None, None, None, None, None, None, None),
+            SessionCredentials(csrf_token="csrf"),
+        )
 
-    async def authenticate(self, username, password, two_factor_token=None):
-        self.calls.append(("authenticate", username, password, two_factor_token))
-        if two_factor_token is None:
-            raise TwoFactorRequiredError("MFA required", 499, sso=True)
+    async def login(self, request):
+        self.calls.append(("login", request))
+        return MfaChallengeResponse(499, "MFA_AUTH_REQUIRED", "MFA required", "2fa")
 
-    async def upload_and_activate(self, **kwargs):
-        self.calls.append(("upload", kwargs["certificate_name"]))
+    async def verify_2fa(self, request):
+        self.calls.append(("verify_2fa", request))
+        return self.success
 
-    async def create_api_key(self, name, description):
-        self.calls.append(("create_api_key", name, description))
-        return "generated-key"
+    async def upload_certificate(self, request):
+        self.calls.append(("upload_certificate", request))
+        return UploadCertificateResponse(200, "certificate-1")
+
+    async def activate_certificate(self, request):
+        self.calls.append(("activate_certificate", request))
+        return ActivateCertificateResponse(200, True)
+
+    async def create_api_key(self, request):
+        self.calls.append(("create_api_key", request))
+        return CreateApiKeyResponse(
+            200,
+            ApiKeyMetadata(
+                "key-1",
+                request.name,
+                request.description,
+                None,
+                None,
+                full_api_key="generated-key",
+            ),
+        )
 
     async def aclose(self):
-        self.calls.append(("close",))
+        pass
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_orchestrates_mfa_upload_and_api_key():
+async def test_bootstrap_orchestrates_mfa_upload_activation_and_api_key():
     gateway = FakeWebConsole()
     requested = []
 
@@ -45,11 +77,12 @@ async def test_bootstrap_orchestrates_mfa_upload_and_api_key():
 
     assert result == "generated-key"
     assert requested == [True]
-    assert gateway.calls == [
-        ("authenticate", "admin", "password", None),
-        ("authenticate", "admin", "password", "123456"),
-        ("upload", "unifi.local"),
-        ("create_api_key", "unifi-observer", "UniFi Observer local integration key"),
+    assert [call[0] for call in gateway.calls] == [
+        "login",
+        "verify_2fa",
+        "upload_certificate",
+        "activate_certificate",
+        "create_api_key",
     ]
 
 
@@ -71,4 +104,9 @@ async def test_bootstrap_does_not_create_key_when_existing_key_is_configured():
     )
 
     assert result is None
-    assert gateway.calls[-1][0] == "upload"
+    assert [call[0] for call in gateway.calls] == [
+        "login",
+        "verify_2fa",
+        "upload_certificate",
+        "activate_certificate",
+    ]

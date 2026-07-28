@@ -4,7 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from ..domain.errors import CertificateUploadError, TwoFactorRequiredError
+from ..domain.errors import CertificateUploadError
+from ..domain.unifi_web_api_models import (
+    ActivateCertificateRequest,
+    CreateApiKeyRequest,
+    LoginRequest,
+    LoginSuccessResponse,
+    MfaChallengeResponse,
+    TwoFactorRequest,
+    UploadCertificateRequest,
+)
 from .ports import UniFiWebConsolePort
 
 TwoFactorProvider = Callable[[], Awaitable[str]]
@@ -39,29 +48,45 @@ class UniFiConsoleBootstrap:
         injected web-console adapter and must close it in a ``finally`` block.
         """
 
-        try:
-            await self._web_console.authenticate(username, password)
-        except TwoFactorRequiredError:
+        login_request = LoginRequest(username=username, password=password)
+        login_response = await self._web_console.login(login_request)
+        authenticated: LoginSuccessResponse
+        if isinstance(login_response, MfaChallengeResponse):
             two_factor_token = await request_two_factor()
             if not two_factor_token:
                 raise CertificateUploadError(
                     "a UniFi 2FA token is required for automatic certificate upload"
                 )
-            await self._web_console.authenticate(
-                username,
-                password,
-                two_factor_token,
+            authenticated = await self._web_console.verify_2fa(
+                TwoFactorRequest(
+                    username=username,
+                    password=password,
+                    token=two_factor_token,
+                )
             )
+        else:
+            authenticated = login_response
 
-        await self._web_console.upload_and_activate(
-            certificate_name=certificate_name,
-            certificate_pem=certificate_pem,
-            private_key_pem=private_key_pem,
+        uploaded = await self._web_console.upload_certificate(
+            UploadCertificateRequest(
+                name=certificate_name,
+                certificate_pem=certificate_pem,
+                private_key_pem=private_key_pem,
+            )
+        )
+        await self._web_console.activate_certificate(
+            ActivateCertificateRequest(certificate_id=uploaded.certificate_id)
         )
 
         if not generate_api_key:
             return None
-        return await self._web_console.create_api_key(
-            name="unifi-observer",
-            description="UniFi Observer local integration key",
+        created = await self._web_console.create_api_key(
+            CreateApiKeyRequest(
+                user_id=authenticated.user.user_id or "",
+                name="unifi-observer",
+                description="UniFi Observer local integration key",
+            )
         )
+        if not created.key.full_api_key:
+            raise CertificateUploadError("UniFi API key creation returned no key")
+        return created.key.full_api_key

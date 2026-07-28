@@ -6,7 +6,18 @@ This document records HTTP calls observed in the UniFi OS web console while conf
 
 The documented call was captured from a UniFi Console reachable at `192.168.0.1` on 2026-07-28. The exact UniFi OS and Network application versions were not captured with the request and must be recorded for every future compatibility report.
 
-The endpoint may change, become unavailable, or require different permissions in another firmware version. Implementations must keep this behavior behind an isolated adapter, detect incompatible responses, avoid leaking credentials, and provide a manual fallback.
+The integration is implemented as a typed internal client rather than a public HTTP proxy:
+
+- `domain/unifi_web_api_models.py` defines immutable request/response DTOs;
+- `infrastructure/unifi_web_api_client.py` implements the transport;
+- `application/ports.py` exposes `UniFiWebConsolePort` to use cases;
+- `application/bootstrap.py` orchestrates the configuration workflow.
+
+The DTOs preserve unknown response fields under `raw` for forward compatibility and hide
+passwords, MFA tokens, cookies, session tokens, private keys, and full API keys from their
+representations. The boundary is deliberately suitable for future extraction as a standalone
+`unifi-web-api` package.
+
 
 ## Security classification
 

@@ -107,7 +107,14 @@ def test_prepare_local_tls_can_be_skipped(monkeypatch, tmp_path):
 
 def test_upload_local_certificate_prompts_for_2fa_only_after_challenge(monkeypatch, tmp_path):
     from unifi_observer.cli import _upload_local_certificate
-    from unifi_observer.infrastructure.certificate_uploader import TwoFactorRequiredError
+    from unifi_observer.domain.unifi_web_api_models import (
+        ActivateCertificateResponse,
+        LoginSuccessResponse,
+        MfaChallengeResponse,
+        SessionCredentials,
+        UniFiUserProfile,
+        UploadCertificateResponse,
+    )
 
     certificate = tmp_path / "unifi.local.fullchain.crt"
     private_key = tmp_path / "unifi.local.key"
@@ -126,31 +133,44 @@ def test_upload_local_certificate_prompts_for_2fa_only_after_challenge(monkeypat
     prompts = iter(["admin", "password", "123456"])
     calls = []
 
-    class FakeUploader:
+    class FakeWebApi:
         def __init__(self, base_url, timeout_seconds):
             assert base_url == settings.api_base_url
             assert timeout_seconds == settings.timeout_seconds
 
-        async def authenticate(self, username, password, token=None):
-            calls.append(("authenticate", username, password, token))
-            if token is None:
-                raise TwoFactorRequiredError("2FA required")
+        async def login(self, request):
+            calls.append(("login", request))
+            return MfaChallengeResponse(499, "MFA_AUTH_REQUIRED", "2FA required", "2fa")
 
-        async def upload_and_activate(self, **kwargs):
-            calls.append(("upload", kwargs))
+        async def verify_2fa(self, request):
+            calls.append(("verify_2fa", request))
+            return LoginSuccessResponse(
+                200,
+                UniFiUserProfile("user-1", None, "admin", None, None, None, None, None, None, None, None),
+                SessionCredentials(csrf_token="csrf"),
+            )
+
+        async def upload_certificate(self, request):
+            calls.append(("upload", request))
+            return UploadCertificateResponse(200, "certificate-1")
+
+        async def activate_certificate(self, request):
+            calls.append(("activate", request))
+            return ActivateCertificateResponse(200, True)
+
+        async def create_api_key(self, request):
+            raise AssertionError("existing API key must skip creation")
 
         async def aclose(self):
             calls.append(("close",))
 
     monkeypatch.setattr("unifi_observer.cli._prompt", lambda *args, **kwargs: next(prompts))
-    monkeypatch.setattr("unifi_observer.cli.UniFiCertificateUploader", FakeUploader)
+    monkeypatch.setattr("unifi_observer.cli.UniFiWebApiClient", FakeWebApi)
 
     _upload_local_certificate(settings, certificate, private_key)
 
-    assert calls[0] == ("authenticate", "admin", "password", None)
-    assert calls[1] == ("authenticate", "admin", "password", "123456")
-    assert calls[2][0] == "upload"
-    assert calls[-1] == ("close",)
+    assert [call[0] for call in calls] == ["login", "verify_2fa", "upload", "activate", "close"]
+    assert calls[1][1].token == "123456"
 
 
 def test_generate_local_certificates_reuses_existing_material(monkeypatch, tmp_path):

@@ -16,9 +16,9 @@ from typing import Any
 
 from .application.bootstrap import UniFiConsoleBootstrap
 from .domain.errors import CertificateUploadError
-from .infrastructure.certificate_uploader import UniFiCertificateUploader
 from .infrastructure.config import Settings
 from .infrastructure.unifi_client import UniFiClient
+from .infrastructure.unifi_web_api_client import UniFiWebApiClient
 
 DEFAULT_CONFIG_PATH = Path("~/.config/unifi-observer/config.env").expanduser()
 
@@ -277,7 +277,7 @@ def _upload_local_certificate(
         return _prompt("UniFi 2FA token", secret=True)
 
     async def operation() -> str | None:
-        uploader = UniFiCertificateUploader(settings.api_base_url, settings.timeout_seconds)
+        uploader = UniFiWebApiClient(settings.api_base_url, settings.timeout_seconds)
         try:
             bootstrap = UniFiConsoleBootstrap(uploader)
             return await bootstrap.run(

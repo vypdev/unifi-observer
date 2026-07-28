@@ -1,5 +1,18 @@
 from typing import Any, Protocol
 
+from ..domain.unifi_web_api_models import (
+    ActivateCertificateRequest,
+    ActivateCertificateResponse,
+    CreateApiKeyRequest,
+    CreateApiKeyResponse,
+    LoginRequest,
+    LoginResponse,
+    LoginSuccessResponse,
+    TwoFactorRequest,
+    UploadCertificateRequest,
+    UploadCertificateResponse,
+)
+
 
 class RuntimeInfo(Protocol):
     @property
@@ -19,24 +32,17 @@ class RuntimeInfo(Protocol):
 
 
 class UniFiWebConsolePort(Protocol):
-    """Application port for the short-lived UniFi OS bootstrap session."""
+    """Typed application boundary for the short-lived UniFi OS web API."""
 
-    async def authenticate(
-        self,
-        username: str,
-        password: str,
-        two_factor_token: str | None = None,
-    ) -> None: ...
+    async def login(self, request: LoginRequest) -> LoginResponse: ...
 
-    async def upload_and_activate(
-        self,
-        *,
-        certificate_name: str,
-        certificate_pem: str,
-        private_key_pem: str,
-    ) -> None: ...
+    async def verify_2fa(self, request: TwoFactorRequest) -> LoginSuccessResponse: ...
 
-    async def create_api_key(self, name: str, description: str) -> str: ...
+    async def upload_certificate(self, request: UploadCertificateRequest) -> UploadCertificateResponse: ...
+
+    async def activate_certificate(self, request: ActivateCertificateRequest) -> ActivateCertificateResponse: ...
+
+    async def create_api_key(self, request: CreateApiKeyRequest) -> CreateApiKeyResponse: ...
 
     async def aclose(self) -> None: ...
 

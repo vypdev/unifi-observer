@@ -45,7 +45,28 @@ infrastructure ──────┘
 - `presentation`: MCP tools and HTTP health/readiness routes;
 - `composition`: production dependency wiring and process entry point.
 
-The read-only data client and the bootstrap adapter are deliberately separate:
+The web-console bootstrap is exposed internally through a typed client boundary:
+
+```text
+application/ports.py
+    UniFiWebConsolePort
+
+infrastructure/unifi_web_api_client.py
+    UniFiWebApiClient
+
+domain/unifi_web_api_models.py
+    LoginRequest / LoginResponse
+    TwoFactorRequest / LoginSuccessResponse
+    UploadCertificateRequest / UploadCertificateResponse
+    ActivateCertificateRequest / ActivateCertificateResponse
+    CreateApiKeyRequest / CreateApiKeyResponse
+```
+
+The DTOs are transport contracts rather than untyped dictionaries. Secret-bearing fields
+are excluded from representations, while unknown upstream fields remain available through
+`raw` for forward compatibility. This package boundary is intentionally suitable for a
+future extraction into a standalone `unifi-web-api` repository.
+
 
 ```text
 MCP client ──/mcp──> unifi-observer ──> UniFi Network API
