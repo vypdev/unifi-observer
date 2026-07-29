@@ -126,11 +126,65 @@ class UniFiClient(UniFiGateway):
         }
 
     async def get_health(self, site_id: str | None = None):
-        if self.settings.api_mode == "local":
-            if not site_id:
-                raise UniFiAPIError("site_id is required in local mode")
-            return await self.get_site_json(site_id, self.path("sites/{site_id}/health"))
-        raise UniFiAPIError("get_health is not supported by the site-manager API")
+        if self.settings.api_mode != "local":
+            raise UniFiAPIError("get_health is not supported by the site-manager API")
+        if not site_id:
+            raise UniFiAPIError("site_id is required in local mode")
+        return await self._get_health_from_device_statistics(site_id)
+
+    async def _get_health_from_device_statistics(self, site_id: str) -> dict[str, Any]:
+        """Build health data from the supported latest device-statistics endpoint."""
+        devices_payload = await self.list_devices(site_id)
+        devices = self._extract_items(devices_payload)
+        health_devices: list[dict[str, Any]] = []
+        unavailable_devices: list[str] = []
+
+        for device in devices:
+            if not isinstance(device, dict) or not device.get("id"):
+                continue
+            device_id = str(device["id"])
+            try:
+                statistics_payload = await self.get_site_json(
+                    site_id,
+                    self.path(f"sites/{{site_id}}/devices/{quote(device_id, safe='')}/statistics/latest"),
+                )
+            except UniFiAPIError as exc:
+                if exc.status_code in {404, 405}:
+                    unavailable_devices.append(device_id)
+                    continue
+                raise
+
+            statistics = statistics_payload.get("data", statistics_payload)
+            health_devices.append(
+                {
+                    "device": {
+                        key: device[key]
+                        for key in ("id", "name", "model", "state", "ipAddress")
+                        if key in device
+                    },
+                    "statistics": statistics,
+                }
+            )
+
+        return {
+            "data": {
+                "siteId": site_id,
+                "source": "device_statistics_latest",
+                "devices": health_devices,
+                "unavailableDeviceStatistics": unavailable_devices,
+            }
+        }
+
+    @staticmethod
+    def _extract_items(payload: Any) -> list[Any]:
+        if not isinstance(payload, dict):
+            return []
+        data = payload.get("data")
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and isinstance(data.get("data"), list):
+            return data["data"]
+        return []
 
     async def get_site(self, site_id: str):
         self._check_site(site_id)

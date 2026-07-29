@@ -241,3 +241,58 @@ async def test_local_pagination_rejects_upstream_that_ignores_offset():
     with pytest.raises(UniFiAPIError, match="unexpected offset"):
         await client.list_clients("site-1")
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_local_health_uses_latest_statistics_for_each_device():
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        if request.url.path.endswith("/devices"):
+            devices = [
+                {"id": "gateway-1", "name": "Gateway", "model": "UCG Ultra", "state": "ONLINE"},
+                {"id": "ap-1", "name": "AP", "model": "U6 Pro", "state": "ONLINE"},
+            ]
+            return httpx.Response(
+                200,
+                json={"data": {"offset": 0, "limit": 100, "count": 2, "totalCount": 2, "data": devices}},
+            )
+        if request.url.path.endswith("/gateway-1/statistics/latest"):
+            return httpx.Response(
+                200,
+                json={"data": {"cpuUtilizationPct": 12.5, "memoryUtilizationPct": 31.0}},
+            )
+        if request.url.path.endswith("/ap-1/statistics/latest"):
+            return httpx.Response(
+                200,
+                json={"data": {"cpuUtilizationPct": 8.0, "interfaces": {"radios": [{"band": "5GHz"}]} }},
+            )
+        raise AssertionError(f"unexpected request: {request.url.path}")
+
+    client = UniFiClient(
+        make_settings(api_mode="local", api_base_url="https://unifi.local"),
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.get_health("site-1")
+
+    assert result == {
+        "data": {
+            "siteId": "site-1",
+            "source": "device_statistics_latest",
+            "devices": [
+                {
+                    "device": {"id": "gateway-1", "name": "Gateway", "model": "UCG Ultra", "state": "ONLINE"},
+                    "statistics": {"cpuUtilizationPct": 12.5, "memoryUtilizationPct": 31.0},
+                },
+                {
+                    "device": {"id": "ap-1", "name": "AP", "model": "U6 Pro", "state": "ONLINE"},
+                    "statistics": {"cpuUtilizationPct": 8.0, "interfaces": {"radios": [{"band": "5GHz"}]}},
+                },
+            ],
+            "unavailableDeviceStatistics": [],
+        }
+    }
+    assert all(not path.endswith("/health") for path in requests)
+    await client.aclose()

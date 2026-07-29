@@ -23,7 +23,7 @@ Protect the endpoint at the network or reverse-proxy boundary. The current servi
 |---|---|---|
 | `unifi_list_sites` | List visible sites. | Site Manager and local mode where supported. |
 | `unifi_get_site` | Get one allowed site. | Site Manager and local mode where supported. |
-| `unifi_get_health` | Get per-site health. | Local mode. |
+| `unifi_get_health` | Return gateway/AP CPU, memory, uptime, uplink and radio statistics from each device's latest statistics endpoint. | Local mode. |
 | `unifi_list_devices` | Return the complete paginated device collection. | Local mode and supported Site Manager contract. |
 | `unifi_list_clients` | Return the complete paginated client collection. | Local mode. |
 
